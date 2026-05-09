@@ -375,7 +375,13 @@ export class DPS150 {
       const writer = this.port.writable!.getWriter();
       try {
         if (logTx) {
-          this.log("info", `TX cmd 0x${c2.toString(16)} addr 0x${c3.toString(16)} (${c4} bytes)`);
+          const payloadHex = Array.from(arr)
+            .map((byte) => byte.toString(16).padStart(2, "0"))
+            .join(" ");
+          this.log(
+            "info",
+            `TX cmd 0x${c2.toString(16)} addr 0x${c3.toString(16)} (${c4} bytes: ${payloadHex || "empty"})`,
+          );
         }
         await writer.write(out);
         await sleep(40);
@@ -393,26 +399,35 @@ export class DPS150 {
     await this.send(HEADER_OUTPUT, CMD_SET, c3, new Uint8Array(v.buffer));
   }
 
-  setVoltage(v: number) {
-    return this.sendFloat(VOLTAGE_SET, v);
+  async setVoltage(v: number) {
+    this.log("info", `Setting voltage to ${v.toFixed(3)} V`);
+    await this.sendFloat(VOLTAGE_SET, v);
+    this.listener({ setVoltage: v });
   }
-  setCurrent(a: number) {
-    return this.sendFloat(CURRENT_SET, a);
+  async setCurrent(a: number) {
+    this.log("info", `Setting current to ${a.toFixed(4)} A`);
+    await this.sendFloat(CURRENT_SET, a);
+    this.listener({ setCurrent: a });
   }
-  setOvp(v: number) {
-    return this.sendFloat(OVP, v);
+  async setOvp(v: number) {
+    await this.sendFloat(OVP, v);
+    this.listener({ ovp: v });
   }
-  setOcp(a: number) {
-    return this.sendFloat(OCP, a);
+  async setOcp(a: number) {
+    await this.sendFloat(OCP, a);
+    this.listener({ ocp: a });
   }
-  setOpp(w: number) {
-    return this.sendFloat(OPP, w);
+  async setOpp(w: number) {
+    await this.sendFloat(OPP, w);
+    this.listener({ opp: w });
   }
-  setOtp(t: number) {
-    return this.sendFloat(OTP, t);
+  async setOtp(t: number) {
+    await this.sendFloat(OTP, t);
+    this.listener({ otp: t });
   }
-  setLvp(v: number) {
-    return this.sendFloat(LVP, v);
+  async setLvp(v: number) {
+    await this.sendFloat(LVP, v);
+    this.listener({ lvp: v });
   }
   setGroupV(idx: number, v: number) {
     return this.sendFloat(GROUP_VSET[idx], v);
@@ -424,11 +439,13 @@ export class DPS150 {
   async enable() {
     this.log("info", "Enabling output");
     await this.send(HEADER_OUTPUT, CMD_SET, OUTPUT_ENABLE, [1]);
+    this.listener({ outputClosed: true });
     await this.refresh();
   }
   async disable() {
     this.log("info", "Disabling output");
     await this.send(HEADER_OUTPUT, CMD_SET, OUTPUT_ENABLE, [0]);
+    this.listener({ outputClosed: false });
     await this.refresh();
   }
   async refresh() {
