@@ -23,11 +23,24 @@ import type { SerialConnectionOptions } from "@/lib/dps150";
 export default function App() {
   const { state, error, logEntries, log, connect, disconnect, clearLog, device } = useDps150();
   const [connectionOptions, setConnectionOptions] = useState(defaultSerialConnectionOptions);
+  const [manualOutputOn, setManualOutputOn] = useState(false);
   const dev = device.current;
   const connected = state.connected;
   const readbackActive = state.readbackActive;
-  const outputOn = state.outputClosed;
+  const outputOn = readbackActive ? state.outputClosed : manualOutputOn;
   const outputControlReady = Boolean(dev);
+
+  useEffect(() => {
+    if (readbackActive) {
+      setManualOutputOn(state.outputClosed);
+    }
+  }, [readbackActive, state.outputClosed]);
+
+  useEffect(() => {
+    if (!connected && !dev) {
+      setManualOutputOn(false);
+    }
+  }, [connected, dev]);
 
   const toggleOutput = async () => {
     log(
@@ -44,9 +57,11 @@ export default function App() {
       if (outputOn) {
         log("info", "Output button command: disable");
         await dev.disable();
+        setManualOutputOn(false);
       } else {
         log("info", "Output button command: enable");
         await dev.enable();
+        setManualOutputOn(true);
       }
     } catch (e: unknown) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -101,9 +116,26 @@ export default function App() {
         )}
 
         {connected && !readbackActive && (
-          <div className="mb-4 panel border-voltage/50 px-4 py-2 text-sm text-voltage flex items-center gap-2">
-            <AlertTriangle className="size-4" /> Write-only mode: commands can be sent, but live
-            telemetry is not available.
+          <div className="mb-4 panel border-voltage/50 px-4 py-2 text-sm text-voltage flex flex-wrap items-center gap-2">
+            <AlertTriangle className="size-4" />
+            <span>Write-only mode: commands can be sent, but live telemetry is not available.</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={async () => {
+                if (!dev) return;
+                log("info", "Force output off");
+                try {
+                  await dev.disable();
+                  setManualOutputOn(false);
+                } catch (e: unknown) {
+                  const error = e instanceof Error ? e : new Error(String(e));
+                  log("error", `Force output off failed: ${error.name}: ${error.message}`);
+                }
+              }}
+            >
+              <Power className="size-4" /> Force Off
+            </Button>
           </div>
         )}
 
