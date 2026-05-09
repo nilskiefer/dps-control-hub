@@ -52,7 +52,7 @@ export function EditableValue({
   };
 
   const accentClass =
-    accent === "current" ? "text-current" :
+    accent === "current" ? "text-amp" :
     accent === "power"   ? "text-power"   :
     "text-voltage";
 

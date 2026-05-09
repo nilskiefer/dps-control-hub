@@ -31,7 +31,7 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-voltage: var(--voltage);
-  --color-current: var(--current);
+  --color-amp: var(--amp);
   --color-power: var(--power);
   --color-led-on: var(--led-on);
   --color-led-off: var(--led-off);
@@ -73,7 +73,7 @@
 
   /* Channel colors */
   --voltage: oklch(0.82 0.18 145); /* phosphor green */
-  --current: oklch(0.82 0.16 75);  /* amber */
+  --amp: oklch(0.82 0.16 75);  /* amber */
   --power:   oklch(0.78 0.16 245); /* electric blue */
 
   --led-on: oklch(0.75 0.22 30);   /* red LED */
@@ -104,7 +104,7 @@
     letter-spacing: -0.02em;
   }
   .glow-voltage { text-shadow: 0 0 24px color-mix(in oklab, var(--voltage) 55%, transparent); }
-  .glow-current { text-shadow: 0 0 24px color-mix(in oklab, var(--current) 55%, transparent); }
+  .glow-amp { text-shadow: 0 0 24px color-mix(in oklab, var(--amp) 55%, transparent); }
   .glow-power   { text-shadow: 0 0 24px color-mix(in oklab, var(--power)   55%, transparent); }
   .panel {
     background:

@@ -174,7 +174,7 @@ function Index() {
                 </div>
                 <div className="mt-1 flex items-baseline gap-3 font-digits">
                   <span className="text-voltage text-lg font-bold">{g.v.toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">V</span></span>
-                  <span className="text-current text-lg font-bold">{g.c.toFixed(3)}<span className="text-xs text-muted-foreground ml-0.5">A</span></span>
+                  <span className="text-amp text-lg font-bold">{g.c.toFixed(3)}<span className="text-xs text-muted-foreground ml-0.5">A</span></span>
                 </div>
               </button>
             ))}
@@ -199,7 +199,7 @@ function Stat({
   active?: boolean;
 }) {
   const color =
-    tone === "current" ? "text-current" :
+    tone === "current" ? "text-amp" :
     tone === "voltage" ? "text-voltage" :
     tone === "power"   ? "text-power"   :
     tone === "alert"   ? "text-destructive" :

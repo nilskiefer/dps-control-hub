@@ -64,7 +64,7 @@ export function LiveChart({ voltage, current, running, vMax, iMax }: Props) {
           const xFor = (t: number) => ((t - t0) / 60_000) * w;
 
           const vColor = getCss("--voltage");
-          const iColor = getCss("--current");
+          const iColor = getCss("--amp");
 
           // voltage line
           ctx.strokeStyle = vColor;
@@ -100,7 +100,7 @@ export function LiveChart({ voltage, current, running, vMax, iMax }: Props) {
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
       <div className="absolute left-2 top-2 flex gap-3 text-[10px] uppercase tracking-widest">
         <span className="text-voltage">— V</span>
-        <span className="text-current">— A</span>
+        <span className="text-amp">— A</span>
       </div>
       <div className="absolute right-2 top-2 text-[10px] text-muted-foreground">60s</div>
     </div>

@@ -11,12 +11,12 @@ interface Props {
 
 export function Readout({ value, unit, label, decimals, accent, active = true }: Props) {
   const colorVar =
-    accent === "current" ? "var(--current)" :
+    accent === "current" ? "var(--amp)" :
     accent === "power"   ? "var(--power)"   :
     "var(--voltage)";
 
   const glowClass =
-    accent === "current" ? "glow-current" :
+    accent === "current" ? "glow-amp" :
     accent === "power"   ? "glow-power"   :
     "glow-voltage";
 
