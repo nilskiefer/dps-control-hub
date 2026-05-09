@@ -133,14 +133,14 @@ export class DPS150 {
   async start() {
     this.log("info", `Opening serial port (${formatPortInfo(this.port)}) at 115200 baud`);
     try {
-      await this.open("hardware");
+      await this.open("none");
     } catch (error) {
       this.log(
         "warn",
-        `Open with hardware flow control failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Open with flow control disabled failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-      this.log("info", "Retrying open with flow control disabled");
-      await this.open("none");
+      this.log("info", "Retrying open with hardware flow control");
+      await this.open("hardware");
     }
     this.log("success", "Serial port open");
     this.log("info", "Starting reader loop");
@@ -246,18 +246,27 @@ export class DPS150 {
   private async initCommand() {
     this.log("info", "Entering DPS command session");
     await this.send(HEADER_OUTPUT, CMD_SESSION, 0, [1]);
+    this.assertReaderHealthy();
     this.log("info", "Setting DPS baud profile to 115200");
     await this.send(HEADER_OUTPUT, CMD_BAUD, 0, [5]); // 115200
+    this.assertReaderHealthy();
     this.log("info", "Requesting model, firmware, limits, and live state");
     await this.send(HEADER_OUTPUT, CMD_GET, MODEL_NAME, [0]);
+    this.assertReaderHealthy();
     await this.send(HEADER_OUTPUT, CMD_GET, HARDWARE_VERSION, [0]);
+    this.assertReaderHealthy();
     await this.send(HEADER_OUTPUT, CMD_GET, FIRMWARE_VERSION, [0]);
+    this.assertReaderHealthy();
     await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0]);
+    this.assertReaderHealthy();
+    this.listener({ connected: true });
+    this.log("success", "DPS-150 command session ready");
+  }
+
+  private assertReaderHealthy() {
     if (!this.readerHealthy) {
       throw new Error("Serial reader stopped during startup. The device was opened but then lost.");
     }
-    this.listener({ connected: true });
-    this.log("success", "DPS-150 command session ready");
   }
 
   private async send(
@@ -267,6 +276,10 @@ export class DPS150 {
     payload: number[] | Uint8Array,
     logTx = true,
   ) {
+    if (!this.readerHealthy) {
+      throw new Error("Serial reader is stopped; refusing to write to a lost device");
+    }
+
     const arr = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
     const c4 = arr.length;
     let c6 = c3 + c4;
