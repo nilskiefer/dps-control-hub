@@ -102,6 +102,7 @@ export type DpsTransportErrorHandler = (error: Error) => void;
 export interface SerialConnectionOptions {
   baudRate: number;
   flowControl: FlowControlType | "auto";
+  manageSignals: boolean;
   dataTerminalReady: boolean;
   requestToSend: boolean;
   startupDelayMs: number;
@@ -110,9 +111,10 @@ export interface SerialConnectionOptions {
 export const defaultSerialConnectionOptions: SerialConnectionOptions = {
   baudRate: 9600,
   flowControl: "hardware",
-  dataTerminalReady: true,
-  requestToSend: true,
-  startupDelayMs: 250,
+  manageSignals: false,
+  dataTerminalReady: false,
+  requestToSend: false,
+  startupDelayMs: 0,
 };
 
 const noopLogger: DpsLogger = () => {};
@@ -134,7 +136,6 @@ export class DPS150 {
   private options: SerialConnectionOptions;
   private writeLock = Promise.resolve();
   private stopped = false;
-  private readerHealthy = true;
 
   constructor(
     port: SerialPort,
@@ -201,6 +202,11 @@ export class DPS150 {
   }
 
   private async configureSignals() {
+    if (!this.options.manageSignals) {
+      this.log("info", "Leaving DTR/RTS unchanged");
+      return;
+    }
+
     try {
       await this.port.setSignals({
         dataTerminalReady: this.options.dataTerminalReady,
@@ -286,12 +292,11 @@ export class DPS150 {
         }
       } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
-        this.readerHealthy = false;
-        this.listener({ connected: false });
-        this.log("error", `Serial read failed: ${error.message}`);
-        this.onTransportError?.(error);
+        this.log(
+          "warn",
+          `Serial read failed: ${error.message}; reader loop will retry if possible`,
+        );
         console.warn("read error", error);
-        return;
       } finally {
         try {
           reader.releaseLock();
@@ -299,33 +304,29 @@ export class DPS150 {
           console.debug("Failed to release serial reader lock", error);
         }
       }
+      await sleep(250);
+    }
+
+    if (!this.stopped) {
+      const error = new Error("Serial reader stopped; the port is no longer readable");
+      this.listener({ connected: false });
+      this.log("error", error.message);
+      this.onTransportError?.(error);
     }
   }
 
   private async initCommand() {
     this.log("info", "Entering DPS command session");
     await this.send(HEADER_OUTPUT, CMD_SESSION, 0, [1]);
-    this.assertReaderHealthy();
     this.log("info", `Setting DPS baud profile to ${this.options.baudRate}`);
     await this.send(HEADER_OUTPUT, CMD_BAUD, 0, [this.getBaudProfile()]);
-    this.assertReaderHealthy();
     this.log("info", "Requesting model, firmware, limits, and live state");
     await this.send(HEADER_OUTPUT, CMD_GET, MODEL_NAME, [0]);
-    this.assertReaderHealthy();
     await this.send(HEADER_OUTPUT, CMD_GET, HARDWARE_VERSION, [0]);
-    this.assertReaderHealthy();
     await this.send(HEADER_OUTPUT, CMD_GET, FIRMWARE_VERSION, [0]);
-    this.assertReaderHealthy();
     await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0]);
-    this.assertReaderHealthy();
     this.listener({ connected: true });
     this.log("success", "DPS-150 command session ready");
-  }
-
-  private assertReaderHealthy() {
-    if (!this.readerHealthy) {
-      throw new Error("Serial reader stopped during startup. The device was opened but then lost.");
-    }
   }
 
   private getBaudProfile() {
@@ -343,10 +344,6 @@ export class DPS150 {
     payload: number[] | Uint8Array,
     logTx = true,
   ) {
-    if (!this.readerHealthy) {
-      throw new Error("Serial reader is stopped; refusing to write to a lost device");
-    }
-
     const arr = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
     const c4 = arr.length;
     let c6 = c3 + c4;

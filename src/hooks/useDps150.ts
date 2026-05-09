@@ -80,7 +80,7 @@ export function useDps150() {
       addLog("info", "Connect requested");
       addLog(
         "info",
-        `Connect settings: baud=${options.baudRate}, flow=${options.flowControl}, DTR=${options.dataTerminalReady ? "on" : "off"}, RTS=${options.requestToSend ? "on" : "off"}, delay=${options.startupDelayMs}ms`,
+        `Connect settings: baud=${options.baudRate}, flow=${options.flowControl}, signals=${options.manageSignals ? "managed" : "unchanged"}, DTR=${options.dataTerminalReady ? "on" : "off"}, RTS=${options.requestToSend ? "on" : "off"}, delay=${options.startupDelayMs}ms`,
       );
       if (!("serial" in navigator)) {
         const message = "Web Serial not supported. Use Chrome, Edge, or Opera over HTTPS.";

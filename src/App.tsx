@@ -366,7 +366,7 @@ function ConnectionSettings({
     "h-8 rounded-md border border-border bg-secondary px-2 text-xs font-mono text-foreground disabled:opacity-50";
 
   return (
-    <section className="mb-4 grid grid-cols-2 gap-3 rounded-md border border-border bg-secondary/30 p-3 md:grid-cols-5">
+    <section className="mb-4 grid grid-cols-2 gap-3 rounded-md border border-border bg-secondary/30 p-3 md:grid-cols-6">
       <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
         Baud
         <select
@@ -405,8 +405,18 @@ function ConnectionSettings({
       <label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
         <input
           type="checkbox"
-          checked={options.dataTerminalReady}
+          checked={options.manageSignals}
           disabled={disabled}
+          onChange={(event) => onChange({ ...options, manageSignals: event.target.checked })}
+        />
+        Signals
+      </label>
+
+      <label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={options.dataTerminalReady}
+          disabled={disabled || !options.manageSignals}
           onChange={(event) => onChange({ ...options, dataTerminalReady: event.target.checked })}
         />
         DTR
@@ -416,7 +426,7 @@ function ConnectionSettings({
         <input
           type="checkbox"
           checked={options.requestToSend}
-          disabled={disabled}
+          disabled={disabled || !options.manageSignals}
           onChange={(event) => onChange({ ...options, requestToSend: event.target.checked })}
         />
         RTS
