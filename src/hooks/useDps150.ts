@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DPS150, DeviceState, DpsLogLevel, initialState } from "@/lib/dps150";
+import {
+  defaultSerialConnectionOptions,
+  DPS150,
+  DeviceState,
+  DpsLogLevel,
+  initialState,
+  SerialConnectionOptions,
+} from "@/lib/dps150";
 
 export interface SerialLogEntry {
   id: number;
@@ -67,47 +74,60 @@ export function useDps150() {
     setLogEntries([]);
   }, []);
 
-  const connect = useCallback(async () => {
-    setError(null);
-    addLog("info", "Connect requested");
-    if (!("serial" in navigator)) {
-      const message = "Web Serial not supported. Use Chrome, Edge, or Opera over HTTPS.";
-      setError(message);
-      addLog("error", message);
-      return;
-    }
-    try {
-      addLog("info", "Opening browser serial port picker");
-      const port = await navigator.serial.requestPort();
-      addLog("info", `Selected port: ${formatPortInfo(port)}`);
-      const dev = new DPS150(port, apply, addLog, (error) => {
-        addLog("error", `Serial transport stopped: ${error.message}`);
-        if (pollRef.current) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-          addLog("info", "Stopped refresh loop after serial reader failure");
-        }
+  const connect = useCallback(
+    async (options = defaultSerialConnectionOptions) => {
+      setError(null);
+      addLog("info", "Connect requested");
+      addLog(
+        "info",
+        `Connect settings: baud=${options.baudRate}, flow=${options.flowControl}, DTR=${options.dataTerminalReady ? "on" : "off"}, RTS=${options.requestToSend ? "on" : "off"}, delay=${options.startupDelayMs}ms`,
+      );
+      if (!("serial" in navigator)) {
+        const message = "Web Serial not supported. Use Chrome, Edge, or Opera over HTTPS.";
+        setError(message);
+        addLog("error", message);
+        return;
+      }
+      try {
+        addLog("info", "Opening browser serial port picker");
+        const port = await navigator.serial.requestPort();
+        addLog("info", `Selected port: ${formatPortInfo(port)}`);
+        const dev = new DPS150(
+          port,
+          apply,
+          addLog,
+          (error) => {
+            addLog("error", `Serial transport stopped: ${error.message}`);
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+              addLog("info", "Stopped refresh loop after serial reader failure");
+            }
+            deviceRef.current = null;
+            setState((prev) => ({ ...prev, connected: false }));
+            setError(`Serial reader stopped: ${error.message}`);
+          },
+          options,
+        );
+        deviceRef.current = dev;
+        await dev.start();
+        pollRef.current = window.setInterval(() => {
+          dev.refresh().catch((e: unknown) => {
+            const error = e instanceof Error ? e : new Error(String(e));
+            addLog("warn", `Refresh failed: ${error.message}`);
+          });
+        }, 500);
+        addLog("info", "Started 500 ms refresh loop");
+      } catch (e: unknown) {
+        const error = e instanceof Error ? e : new Error(String(e));
+        addLog("error", `${error.name}: ${error.message}`);
+        addLog("warn", getErrorHint(error));
         deviceRef.current = null;
-        setState((prev) => ({ ...prev, connected: false }));
-        setError(`Serial reader stopped: ${error.message}`);
-      });
-      deviceRef.current = dev;
-      await dev.start();
-      pollRef.current = window.setInterval(() => {
-        dev.refresh().catch((e: unknown) => {
-          const error = e instanceof Error ? e : new Error(String(e));
-          addLog("warn", `Refresh failed: ${error.message}`);
-        });
-      }, 500);
-      addLog("info", "Started 500 ms refresh loop");
-    } catch (e: unknown) {
-      const error = e instanceof Error ? e : new Error(String(e));
-      addLog("error", `${error.name}: ${error.message}`);
-      addLog("warn", getErrorHint(error));
-      deviceRef.current = null;
-      if (error.name !== "NotFoundError") setError(`${error.message} ${getErrorHint(error)}`);
-    }
-  }, [addLog, apply]);
+        if (error.name !== "NotFoundError") setError(`${error.message} ${getErrorHint(error)}`);
+      }
+    },
+    [addLog, apply],
+  );
 
   const disconnect = useCallback(async () => {
     addLog("info", "Disconnect requested");
@@ -140,3 +160,5 @@ export function useDps150() {
     device: deviceRef,
   };
 }
+
+export type { SerialConnectionOptions };

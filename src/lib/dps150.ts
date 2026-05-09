@@ -98,6 +98,22 @@ export type DpsLogLevel = "info" | "success" | "warn" | "error";
 export type DpsLogger = (level: DpsLogLevel, message: string) => void;
 export type DpsTransportErrorHandler = (error: Error) => void;
 
+export interface SerialConnectionOptions {
+  baudRate: number;
+  flowControl: FlowControlType | "auto";
+  dataTerminalReady: boolean;
+  requestToSend: boolean;
+  startupDelayMs: number;
+}
+
+export const defaultSerialConnectionOptions: SerialConnectionOptions = {
+  baudRate: 115200,
+  flowControl: "hardware",
+  dataTerminalReady: true,
+  requestToSend: true,
+  startupDelayMs: 250,
+};
+
 const noopLogger: DpsLogger = () => {};
 
 function formatPortInfo(port: SerialPort) {
@@ -114,6 +130,7 @@ export class DPS150 {
   listener: Listener;
   private log: DpsLogger;
   private onTransportError?: DpsTransportErrorHandler;
+  private options: SerialConnectionOptions;
   private writeLock = Promise.resolve();
   private stopped = false;
   private readerHealthy = true;
@@ -123,40 +140,81 @@ export class DPS150 {
     listener: Listener,
     log: DpsLogger = noopLogger,
     onTransportError?: DpsTransportErrorHandler,
+    options: SerialConnectionOptions = defaultSerialConnectionOptions,
   ) {
     this.port = port;
     this.listener = listener;
     this.log = log;
     this.onTransportError = onTransportError;
+    this.options = options;
   }
 
   async start() {
-    this.log("info", `Opening serial port (${formatPortInfo(this.port)}) at 115200 baud`);
-    try {
-      await this.open("none");
-    } catch (error) {
-      this.log(
-        "warn",
-        `Open with flow control disabled failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      this.log("info", "Retrying open with hardware flow control");
-      await this.open("hardware");
-    }
+    this.log(
+      "info",
+      `Opening serial port (${formatPortInfo(this.port)}) at ${this.options.baudRate} baud`,
+    );
+    await this.openWithFallback();
     this.log("success", "Serial port open");
+    await this.configureSignals();
+    if (this.options.startupDelayMs > 0) {
+      this.log("info", `Waiting ${this.options.startupDelayMs} ms for serial bridge to settle`);
+      await sleep(this.options.startupDelayMs);
+    }
     this.log("info", "Starting reader loop");
     this.startReader();
     await this.initCommand();
   }
 
+  private async openWithFallback() {
+    const flowControls: FlowControlType[] =
+      this.options.flowControl === "auto" ? ["hardware", "none"] : [this.options.flowControl];
+    let lastError: unknown;
+
+    for (const flowControl of flowControls) {
+      try {
+        this.log("info", `Trying open with flowControl=${flowControl}`);
+        await this.open(flowControl);
+        return;
+      } catch (error) {
+        lastError = error;
+        this.log(
+          "warn",
+          `Open with flowControl=${flowControl} failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    throw lastError;
+  }
+
   private open(flowControl: FlowControlType) {
     return this.port.open({
-      baudRate: 115200,
+      baudRate: this.options.baudRate,
       bufferSize: 1024,
       dataBits: 8,
       stopBits: 1,
       flowControl,
       parity: "none",
     });
+  }
+
+  private async configureSignals() {
+    try {
+      await this.port.setSignals({
+        dataTerminalReady: this.options.dataTerminalReady,
+        requestToSend: this.options.requestToSend,
+      });
+      this.log(
+        "info",
+        `Serial signals set: DTR=${this.options.dataTerminalReady ? "on" : "off"}, RTS=${this.options.requestToSend ? "on" : "off"}`,
+      );
+    } catch (error) {
+      this.log(
+        "warn",
+        `Failed to set serial signals: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   async stop() {

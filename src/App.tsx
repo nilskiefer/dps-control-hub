@@ -16,10 +16,13 @@ import {
   ArrowDownToLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { defaultSerialConnectionOptions } from "@/lib/dps150";
 import type { SerialLogEntry } from "@/hooks/useDps150";
+import type { SerialConnectionOptions } from "@/lib/dps150";
 
 export default function App() {
   const { state, error, logEntries, log, connect, disconnect, clearLog, device } = useDps150();
+  const [connectionOptions, setConnectionOptions] = useState(defaultSerialConnectionOptions);
   const dev = device.current;
   const connected = state.connected;
   const outputOn = state.outputClosed;
@@ -77,12 +80,18 @@ export default function App() {
                 <Plug className="size-4" /> Disconnect
               </Button>
             ) : (
-              <Button size="sm" onClick={connect}>
+              <Button size="sm" onClick={() => connect(connectionOptions)}>
                 <Plug className="size-4" /> Connect
               </Button>
             )}
           </div>
         </header>
+
+        <ConnectionSettings
+          options={connectionOptions}
+          disabled={connected || Boolean(dev)}
+          onChange={setConnectionOptions}
+        />
 
         {error && (
           <div className="mb-4 panel border-destructive/50 px-4 py-2 text-sm text-destructive flex items-center gap-2">
@@ -341,6 +350,91 @@ export default function App() {
         </footer>
       </div>
     </div>
+  );
+}
+
+function ConnectionSettings({
+  options,
+  disabled,
+  onChange,
+}: {
+  options: SerialConnectionOptions;
+  disabled: boolean;
+  onChange: (options: SerialConnectionOptions) => void;
+}) {
+  const controlClass =
+    "h-8 rounded-md border border-border bg-secondary px-2 text-xs font-mono text-foreground disabled:opacity-50";
+
+  return (
+    <section className="mb-4 grid grid-cols-2 gap-3 rounded-md border border-border bg-secondary/30 p-3 md:grid-cols-5">
+      <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        Baud
+        <select
+          className={controlClass}
+          value={options.baudRate}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...options, baudRate: Number(event.target.value) })}
+        >
+          <option value={115200}>115200</option>
+          <option value={57600}>57600</option>
+          <option value={38400}>38400</option>
+          <option value={19200}>19200</option>
+          <option value={9600}>9600</option>
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        Flow
+        <select
+          className={controlClass}
+          value={options.flowControl}
+          disabled={disabled}
+          onChange={(event) =>
+            onChange({
+              ...options,
+              flowControl: event.target.value as SerialConnectionOptions["flowControl"],
+            })
+          }
+        >
+          <option value="hardware">hardware</option>
+          <option value="none">none</option>
+          <option value="auto">auto</option>
+        </select>
+      </label>
+
+      <label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={options.dataTerminalReady}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...options, dataTerminalReady: event.target.checked })}
+        />
+        DTR
+      </label>
+
+      <label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={options.requestToSend}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...options, requestToSend: event.target.checked })}
+        />
+        RTS
+      </label>
+
+      <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        Delay ms
+        <input
+          className={controlClass}
+          type="number"
+          min={0}
+          step={50}
+          value={options.startupDelayMs}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...options, startupDelayMs: Number(event.target.value) })}
+        />
+      </label>
+    </section>
   );
 }
 
