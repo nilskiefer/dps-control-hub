@@ -25,6 +25,7 @@ export default function App() {
   const [connectionOptions, setConnectionOptions] = useState(defaultSerialConnectionOptions);
   const dev = device.current;
   const connected = state.connected;
+  const readbackActive = state.readbackActive;
   const outputOn = state.outputClosed;
   const outputControlReady = Boolean(dev);
 
@@ -69,7 +70,7 @@ export default function App() {
               </h1>
               <p className="text-xs text-muted-foreground font-mono">
                 {connected
-                  ? `${state.modelName || "DPS-150"} · HW ${state.hardwareVersion || "—"} · FW ${state.firmwareVersion || "—"}`
+                  ? `${state.modelName || "DPS-150"} · HW ${state.hardwareVersion || "—"} · FW ${state.firmwareVersion || "—"} · ${readbackActive ? "readback" : "write-only"}`
                   : "Not connected"}
               </p>
             </div>
@@ -96,6 +97,13 @@ export default function App() {
         {error && (
           <div className="mb-4 panel border-destructive/50 px-4 py-2 text-sm text-destructive flex items-center gap-2">
             <AlertTriangle className="size-4" /> {error}
+          </div>
+        )}
+
+        {connected && !readbackActive && (
+          <div className="mb-4 panel border-voltage/50 px-4 py-2 text-sm text-voltage flex items-center gap-2">
+            <AlertTriangle className="size-4" /> Write-only mode: commands can be sent, but live
+            telemetry is not available.
           </div>
         )}
 
@@ -430,6 +438,18 @@ function ConnectionSettings({
           onChange={(event) => onChange({ ...options, requestToSend: event.target.checked })}
         />
         RTS
+      </label>
+
+      <label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={options.keepWriteOnlyOnReadFailure}
+          disabled={disabled}
+          onChange={(event) =>
+            onChange({ ...options, keepWriteOnlyOnReadFailure: event.target.checked })
+          }
+        />
+        Write-only
       </label>
 
       <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">

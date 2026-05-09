@@ -36,6 +36,7 @@ const BAUD_PROFILES = [9600, 19200, 38400, 57600, 115200] as const;
 
 export interface DeviceState {
   connected: boolean;
+  readbackActive: boolean;
   modelName: string;
   hardwareVersion: string;
   firmwareVersion: string;
@@ -65,6 +66,7 @@ export interface DeviceState {
 
 export const initialState: DeviceState = {
   connected: false,
+  readbackActive: false,
   modelName: "",
   hardwareVersion: "",
   firmwareVersion: "",
@@ -106,6 +108,7 @@ export interface SerialConnectionOptions {
   dataTerminalReady: boolean;
   requestToSend: boolean;
   startupDelayMs: number;
+  keepWriteOnlyOnReadFailure: boolean;
 }
 
 export const defaultSerialConnectionOptions: SerialConnectionOptions = {
@@ -115,6 +118,7 @@ export const defaultSerialConnectionOptions: SerialConnectionOptions = {
   dataTerminalReady: false,
   requestToSend: false,
   startupDelayMs: 0,
+  keepWriteOnlyOnReadFailure: true,
 };
 
 const noopLogger: DpsLogger = () => {};
@@ -309,9 +313,15 @@ export class DPS150 {
 
     if (!this.stopped) {
       const error = new Error("Serial reader stopped; the port is no longer readable");
-      this.listener({ connected: false });
-      this.log("error", error.message);
-      this.onTransportError?.(error);
+      this.log("warn", error.message);
+      if (this.options.keepWriteOnlyOnReadFailure) {
+        this.listener({ readbackActive: false });
+        this.log("warn", "Continuing in write-only mode; telemetry/readback is unavailable");
+      } else {
+        this.listener({ connected: false, readbackActive: false });
+        this.log("error", error.message);
+        this.onTransportError?.(error);
+      }
     }
   }
 
@@ -325,7 +335,7 @@ export class DPS150 {
     await this.send(HEADER_OUTPUT, CMD_GET, HARDWARE_VERSION, [0]);
     await this.send(HEADER_OUTPUT, CMD_GET, FIRMWARE_VERSION, [0]);
     await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0]);
-    this.listener({ connected: true });
+    this.listener({ connected: true, readbackActive: true });
     this.log("success", "DPS-150 command session ready");
   }
 
