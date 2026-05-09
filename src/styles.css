@@ -42,42 +42,44 @@
 :root {
   --radius: 0.5rem;
 
-  /* Dark instrument panel */
-  --background: oklch(0.16 0.012 250);
-  --foreground: oklch(0.94 0.01 240);
+  /* Dark instrument panel — DPS-150 themed */
+  --background: oklch(0.16 0.018 255);
+  --foreground: oklch(0.95 0.01 240);
 
-  --card: oklch(0.205 0.014 250);
-  --card-foreground: oklch(0.94 0.01 240);
+  --card: oklch(0.205 0.02 255);
+  --card-foreground: oklch(0.95 0.01 240);
 
-  --popover: oklch(0.205 0.014 250);
-  --popover-foreground: oklch(0.94 0.01 240);
+  --popover: oklch(0.205 0.02 255);
+  --popover-foreground: oklch(0.95 0.01 240);
 
-  --primary: oklch(0.78 0.18 145); /* phosphor green */
+  /* primary = electric blue (matches "+" port glow / power button ring) */
+  --primary: oklch(0.7 0.19 250);
   --primary-foreground: oklch(0.15 0.01 240);
 
-  --secondary: oklch(0.26 0.015 250);
-  --secondary-foreground: oklch(0.94 0.01 240);
+  --secondary: oklch(0.26 0.02 255);
+  --secondary-foreground: oklch(0.95 0.01 240);
 
-  --muted: oklch(0.24 0.013 250);
-  --muted-foreground: oklch(0.65 0.02 240);
+  --muted: oklch(0.24 0.018 255);
+  --muted-foreground: oklch(0.68 0.02 245);
 
-  --accent: oklch(0.28 0.02 250);
-  --accent-foreground: oklch(0.95 0.01 240);
+  --accent: oklch(0.3 0.04 250);
+  --accent-foreground: oklch(0.96 0.01 240);
 
-  --destructive: oklch(0.65 0.22 25);
+  /* destructive = red (matches "−" / output-on alert) */
+  --destructive: oklch(0.62 0.24 25);
   --destructive-foreground: oklch(0.98 0 0);
 
-  --border: oklch(0.28 0.015 250);
-  --input: oklch(0.24 0.013 250);
-  --ring: oklch(0.78 0.18 145);
+  --border: oklch(0.3 0.02 255);
+  --input: oklch(0.24 0.018 255);
+  --ring: oklch(0.7 0.19 250);
 
-  /* Channel colors */
-  --voltage: oklch(0.82 0.18 145); /* phosphor green */
-  --amp: oklch(0.82 0.16 75);  /* amber */
-  --power:   oklch(0.78 0.16 245); /* electric blue */
+  /* Channel colors — match DPS-150 on-screen palette */
+  --voltage: oklch(0.9 0.17 95);   /* yellow */
+  --amp:     oklch(0.85 0.13 220); /* light blue / cyan */
+  --power:   oklch(0.85 0.18 145); /* green */
 
-  --led-on: oklch(0.75 0.22 30);   /* red LED */
-  --led-off: oklch(0.32 0.02 250);
+  --led-on:  oklch(0.65 0.25 25);  /* red power-button glow */
+  --led-off: oklch(0.32 0.02 255);
 }
 
 .dark {
@@ -126,4 +128,13 @@
     background: var(--led-on);
     box-shadow: 0 0 12px var(--led-on), inset 0 0 4px rgba(255,255,255,0.4);
   }
+  /* Banana-jack indicators in the header — red (+) / blue (−) */
+  .port {
+    width: 0.85rem; height: 0.85rem; border-radius: 9999px;
+    border: 2px solid color-mix(in oklab, white 12%, transparent);
+    box-shadow: inset 0 0 6px rgba(0,0,0,0.6), 0 0 10px -2px currentColor;
+    display: inline-block;
+  }
+  .port-pos { background: oklch(0.6 0.24 25);  color: oklch(0.6 0.24 25); }
+  .port-neg { background: oklch(0.6 0.22 250); color: oklch(0.6 0.22 250); }
 }
