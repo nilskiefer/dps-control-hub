@@ -25,22 +25,29 @@ export function useDps150() {
       pollRef.current = window.setInterval(() => {
         dev.refresh().catch(() => {});
       }, 500);
-    } catch (e: any) {
-      if (e?.name !== "NotFoundError") setError(e?.message ?? String(e));
+    } catch (e: unknown) {
+      const error = e instanceof Error ? e : new Error(String(e));
+      if (error.name !== "NotFoundError") setError(error.message);
     }
   }, [apply]);
 
   const disconnect = useCallback(async () => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
     await deviceRef.current?.stop();
     deviceRef.current = null;
     setState(initialState);
   }, []);
 
-  useEffect(() => () => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    deviceRef.current?.stop();
-  }, []);
+  useEffect(
+    () => () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      deviceRef.current?.stop();
+    },
+    [],
+  );
 
   return {
     state,

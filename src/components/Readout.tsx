@@ -11,20 +11,14 @@ interface Props {
 
 export function Readout({ value, unit, label, decimals, accent, active = true }: Props) {
   const colorVar =
-    accent === "current" ? "var(--amp)" :
-    accent === "power"   ? "var(--power)"   :
-    "var(--voltage)";
+    accent === "current" ? "var(--amp)" : accent === "power" ? "var(--power)" : "var(--voltage)";
 
   const glowClass =
-    accent === "current" ? "glow-amp" :
-    accent === "power"   ? "glow-power"   :
-    "glow-voltage";
+    accent === "current" ? "glow-amp" : accent === "power" ? "glow-power" : "glow-voltage";
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-        {label}
-      </span>
+      <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">{label}</span>
       <div className="flex items-baseline gap-2">
         <span
           className={cn(
@@ -36,9 +30,7 @@ export function Readout({ value, unit, label, decimals, accent, active = true }:
         >
           {active ? value.toFixed(decimals) : "—.———".slice(0, decimals + 2)}
         </span>
-        <span className="font-digits text-2xl font-medium text-muted-foreground">
-          {unit}
-        </span>
+        <span className="font-digits text-2xl font-medium text-muted-foreground">{unit}</span>
       </div>
     </div>
   );

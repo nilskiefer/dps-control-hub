@@ -8,17 +8,26 @@ interface Props {
   iMax: number;
 }
 
-interface Sample { t: number; v: number; i: number }
+interface Sample {
+  t: number;
+  v: number;
+  i: number;
+}
 
 export function LiveChart({ voltage, current, running, vMax, iMax }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const samples = useRef<Sample[]>([]);
   const latest = useRef({ v: voltage, i: current });
 
-  useEffect(() => { latest.current = { v: voltage, i: current }; }, [voltage, current]);
+  useEffect(() => {
+    latest.current = { v: voltage, i: current };
+  }, [voltage, current]);
 
   useEffect(() => {
-    if (!running) { samples.current = []; return; }
+    if (!running) {
+      samples.current = [];
+      return;
+    }
     const id = setInterval(() => {
       samples.current.push({ t: Date.now(), v: latest.current.v, i: latest.current.i });
       const cutoff = Date.now() - 60_000;
@@ -33,9 +42,11 @@ export function LiveChart({ voltage, current, running, vMax, iMax }: Props) {
       const c = canvasRef.current;
       if (c) {
         const dpr = window.devicePixelRatio || 1;
-        const w = c.clientWidth, h = c.clientHeight;
+        const w = c.clientWidth,
+          h = c.clientHeight;
         if (c.width !== w * dpr || c.height !== h * dpr) {
-          c.width = w * dpr; c.height = h * dpr;
+          c.width = w * dpr;
+          c.height = h * dpr;
         }
         const ctx = c.getContext("2d")!;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -73,7 +84,8 @@ export function LiveChart({ voltage, current, running, vMax, iMax }: Props) {
           arr.forEach((s, i) => {
             const x = xFor(s.t);
             const y = h - (s.v / Math.max(vMax, 0.1)) * h;
-            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
           });
           ctx.stroke();
 
@@ -84,7 +96,8 @@ export function LiveChart({ voltage, current, running, vMax, iMax }: Props) {
           arr.forEach((s, i) => {
             const x = xFor(s.t);
             const y = h - (s.i / Math.max(iMax, 0.1)) * h;
-            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
           });
           ctx.stroke();
         }

@@ -14,7 +14,8 @@ export default function App() {
 
   const toggleOutput = async () => {
     if (!dev) return;
-    if (outputOn) await dev.disable(); else await dev.enable();
+    if (outputOn) await dev.disable();
+    else await dev.enable();
   };
 
   return (
@@ -60,21 +61,54 @@ export default function App() {
         {/* Main meter panel */}
         <section className="panel p-5 md:p-7 mb-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
-            <Readout label="Output Voltage" value={state.outputVoltage} unit="V" decimals={3} accent="voltage" active={connected} />
-            <Readout label="Output Current" value={state.outputCurrent} unit="A" decimals={3} accent="current" active={connected} />
-            <Readout label="Output Power"   value={state.outputPower}   unit="W" decimals={2} accent="power"   active={connected} />
+            <Readout
+              label="Output Voltage"
+              value={state.outputVoltage}
+              unit="V"
+              decimals={3}
+              accent="voltage"
+              active={connected}
+            />
+            <Readout
+              label="Output Current"
+              value={state.outputCurrent}
+              unit="A"
+              decimals={3}
+              accent="current"
+              active={connected}
+            />
+            <Readout
+              label="Output Power"
+              value={state.outputPower}
+              unit="W"
+              decimals={2}
+              accent="power"
+              active={connected}
+            />
           </div>
 
           <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
             <EditableValue
-              label="Set Voltage" value={state.setVoltage} unit="V" decimals={2} step={0.01}
-              min={0} max={state.upperLimitVoltage || 30} accent="voltage"
+              label="Set Voltage"
+              value={state.setVoltage}
+              unit="V"
+              decimals={2}
+              step={0.01}
+              min={0}
+              max={state.upperLimitVoltage || 30}
+              accent="voltage"
               disabled={!connected}
               onCommit={(v) => dev?.setVoltage(v)}
             />
             <EditableValue
-              label="Set Current" value={state.setCurrent} unit="A" decimals={3} step={0.001}
-              min={0} max={state.upperLimitCurrent || 5} accent="current"
+              label="Set Current"
+              value={state.setCurrent}
+              unit="A"
+              decimals={3}
+              step={0.001}
+              min={0}
+              max={state.upperLimitCurrent || 5}
+              accent="current"
               disabled={!connected}
               onCommit={(v) => dev?.setCurrent(v)}
             />
@@ -111,39 +145,115 @@ export default function App() {
 
           {/* Status row */}
           <div className="mt-5 flex flex-wrap gap-4 text-xs font-mono">
-            <Stat icon={<Zap className="size-3.5" />} label="MODE" value={connected ? state.mode : "—"}
-              tone={state.mode === "CC" ? "current" : "voltage"} active={connected && outputOn} />
-            <Stat icon={<Activity className="size-3.5" />} label="VIN" value={`${state.inputVoltage.toFixed(2)} V`} active={connected} />
-            <Stat icon={<Thermometer className="size-3.5" />} label="TEMP" value={`${state.temperature.toFixed(0)} °C`} active={connected} />
-            <Stat icon={<Activity className="size-3.5" />} label="CAP" value={`${state.outputCapacity.toFixed(3)} Ah`} active={connected} />
-            <Stat icon={<Activity className="size-3.5" />} label="ENERGY" value={`${state.outputEnergy.toFixed(3)} Wh`} active={connected} />
-            <Stat icon={<AlertTriangle className="size-3.5" />} label="PROT"
+            <Stat
+              icon={<Zap className="size-3.5" />}
+              label="MODE"
+              value={connected ? state.mode : "—"}
+              tone={state.mode === "CC" ? "current" : "voltage"}
+              active={connected && outputOn}
+            />
+            <Stat
+              icon={<Activity className="size-3.5" />}
+              label="VIN"
+              value={`${state.inputVoltage.toFixed(2)} V`}
+              active={connected}
+            />
+            <Stat
+              icon={<Thermometer className="size-3.5" />}
+              label="TEMP"
+              value={`${state.temperature.toFixed(0)} °C`}
+              active={connected}
+            />
+            <Stat
+              icon={<Activity className="size-3.5" />}
+              label="CAP"
+              value={`${state.outputCapacity.toFixed(3)} Ah`}
+              active={connected}
+            />
+            <Stat
+              icon={<Activity className="size-3.5" />}
+              label="ENERGY"
+              value={`${state.outputEnergy.toFixed(3)} Wh`}
+              active={connected}
+            />
+            <Stat
+              icon={<AlertTriangle className="size-3.5" />}
+              label="PROT"
               value={state.protectionState || "OK"}
               tone={state.protectionState ? "alert" : undefined}
-              active={connected} />
+              active={connected}
+            />
           </div>
         </section>
 
         {/* Protection limits */}
         <section className="panel p-5 mb-4">
-          <h2 className="text-xs uppercase tracking-[0.22em] text-muted-foreground mb-4">Protection Limits</h2>
+          <h2 className="text-xs uppercase tracking-[0.22em] text-muted-foreground mb-4">
+            Protection Limits
+          </h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <EditableValue label="OVP" value={state.ovp} unit="V" decimals={2} step={0.1} max={35}
-              disabled={!connected} accent="voltage" onCommit={(v) => dev?.setOvp(v)} />
-            <EditableValue label="OCP" value={state.ocp} unit="A" decimals={3} step={0.01} max={6}
-              disabled={!connected} accent="current" onCommit={(v) => dev?.setOcp(v)} />
-            <EditableValue label="OPP" value={state.opp} unit="W" decimals={1} step={1} max={160}
-              disabled={!connected} accent="power" onCommit={(v) => dev?.setOpp(v)} />
-            <EditableValue label="OTP" value={state.otp} unit="°C" decimals={0} step={1} max={120}
-              disabled={!connected} onCommit={(v) => dev?.setOtp(v)} />
-            <EditableValue label="LVP" value={state.lvp} unit="V" decimals={2} step={0.1} max={30}
-              disabled={!connected} accent="voltage" onCommit={(v) => dev?.setLvp(v)} />
+            <EditableValue
+              label="OVP"
+              value={state.ovp}
+              unit="V"
+              decimals={2}
+              step={0.1}
+              max={35}
+              disabled={!connected}
+              accent="voltage"
+              onCommit={(v) => dev?.setOvp(v)}
+            />
+            <EditableValue
+              label="OCP"
+              value={state.ocp}
+              unit="A"
+              decimals={3}
+              step={0.01}
+              max={6}
+              disabled={!connected}
+              accent="current"
+              onCommit={(v) => dev?.setOcp(v)}
+            />
+            <EditableValue
+              label="OPP"
+              value={state.opp}
+              unit="W"
+              decimals={1}
+              step={1}
+              max={160}
+              disabled={!connected}
+              accent="power"
+              onCommit={(v) => dev?.setOpp(v)}
+            />
+            <EditableValue
+              label="OTP"
+              value={state.otp}
+              unit="°C"
+              decimals={0}
+              step={1}
+              max={120}
+              disabled={!connected}
+              onCommit={(v) => dev?.setOtp(v)}
+            />
+            <EditableValue
+              label="LVP"
+              value={state.lvp}
+              unit="V"
+              decimals={2}
+              step={0.1}
+              max={30}
+              disabled={!connected}
+              accent="voltage"
+              onCommit={(v) => dev?.setLvp(v)}
+            />
           </div>
         </section>
 
         {/* Memory groups */}
         <section className="panel p-5 mb-8">
-          <h2 className="text-xs uppercase tracking-[0.22em] text-muted-foreground mb-4">Memory Presets</h2>
+          <h2 className="text-xs uppercase tracking-[0.22em] text-muted-foreground mb-4">
+            Memory Presets
+          </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {state.groups.map((g, i) => (
               <button
@@ -165,8 +275,14 @@ export default function App() {
                   <span className="opacity-0 group-hover:opacity-100 text-primary">recall →</span>
                 </div>
                 <div className="mt-1 flex items-baseline gap-3 font-digits">
-                  <span className="text-voltage text-lg font-bold">{g.v.toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">V</span></span>
-                  <span className="text-amp text-lg font-bold">{g.c.toFixed(3)}<span className="text-xs text-muted-foreground ml-0.5">A</span></span>
+                  <span className="text-voltage text-lg font-bold">
+                    {g.v.toFixed(2)}
+                    <span className="text-xs text-muted-foreground ml-0.5">V</span>
+                  </span>
+                  <span className="text-amp text-lg font-bold">
+                    {g.c.toFixed(3)}
+                    <span className="text-xs text-muted-foreground ml-0.5">A</span>
+                  </span>
                 </div>
               </button>
             ))}
@@ -182,7 +298,11 @@ export default function App() {
 }
 
 function Stat({
-  icon, label, value, tone, active = true,
+  icon,
+  label,
+  value,
+  tone,
+  active = true,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -191,13 +311,22 @@ function Stat({
   active?: boolean;
 }) {
   const color =
-    tone === "current" ? "text-amp" :
-    tone === "voltage" ? "text-voltage" :
-    tone === "power"   ? "text-power"   :
-    tone === "alert"   ? "text-destructive" :
-    "text-foreground";
+    tone === "current"
+      ? "text-amp"
+      : tone === "voltage"
+        ? "text-voltage"
+        : tone === "power"
+          ? "text-power"
+          : tone === "alert"
+            ? "text-destructive"
+            : "text-foreground";
   return (
-    <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary/60 border border-border", !active && "opacity-50")}>
+    <div
+      className={cn(
+        "flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary/60 border border-border",
+        !active && "opacity-50",
+      )}
+    >
       <span className="text-muted-foreground">{icon}</span>
       <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span>
       <span className={cn("font-mono font-semibold", color)}>{value}</span>

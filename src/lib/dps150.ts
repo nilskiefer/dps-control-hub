@@ -81,8 +81,13 @@ export const initialState: DeviceState = {
   outputEnergy: 0,
   upperLimitVoltage: 30,
   upperLimitCurrent: 5,
-  ovp: 0, ocp: 0, opp: 0, otp: 0, lvp: 0,
-  brightness: 0, volume: 0,
+  ovp: 0,
+  ocp: 0,
+  opp: 0,
+  otp: 0,
+  lvp: 0,
+  brightness: 0,
+  volume: 0,
   groups: Array.from({ length: 6 }, () => ({ v: 0, c: 0 })),
 };
 
@@ -117,9 +122,21 @@ export class DPS150 {
 
   async stop() {
     this.stopped = true;
-    try { await this.send(HEADER_OUTPUT, CMD_SESSION, 0, [0]); } catch {}
-    try { await this.reader?.cancel(); } catch {}
-    try { await this.port.close(); } catch {}
+    try {
+      await this.send(HEADER_OUTPUT, CMD_SESSION, 0, [0]);
+    } catch (error) {
+      console.debug("Failed to close DPS session", error);
+    }
+    try {
+      await this.reader?.cancel();
+    } catch (error) {
+      console.debug("Failed to cancel DPS reader", error);
+    }
+    try {
+      await this.port.close();
+    } catch (error) {
+      console.debug("Failed to close serial port", error);
+    }
   }
 
   private async startReader() {
@@ -133,7 +150,8 @@ export class DPS150 {
           if (done) return;
           if (!value) continue;
           const b = new Uint8Array(buffer.length + value.length);
-          b.set(buffer); b.set(value, buffer.length);
+          b.set(buffer);
+          b.set(value, buffer.length);
           buffer = b;
           let i = 0;
           while (i < buffer.length - 6) {
@@ -158,7 +176,11 @@ export class DPS150 {
         console.warn("read error", e);
         return;
       } finally {
-        try { reader.releaseLock(); } catch {}
+        try {
+          reader.releaseLock();
+        } catch (error) {
+          console.debug("Failed to release serial reader lock", error);
+        }
       }
     }
   }
@@ -179,7 +201,10 @@ export class DPS150 {
     let c6 = c3 + c4;
     for (let i = 0; i < c4; i++) c6 += arr[i];
     const out = new Uint8Array(arr.length + 5);
-    out[0] = c1; out[1] = c2; out[2] = c3; out[3] = c4;
+    out[0] = c1;
+    out[1] = c2;
+    out[2] = c3;
+    out[3] = c4;
     out.set(arr, 4);
     out[out.length - 1] = c6 & 0xff;
 
@@ -207,24 +232,50 @@ export class DPS150 {
     await this.send(HEADER_OUTPUT, CMD_SET, c3, new Uint8Array(v.buffer));
   }
 
-  setVoltage(v: number) { return this.sendFloat(VOLTAGE_SET, v); }
-  setCurrent(a: number) { return this.sendFloat(CURRENT_SET, a); }
-  setOvp(v: number) { return this.sendFloat(OVP, v); }
-  setOcp(a: number) { return this.sendFloat(OCP, a); }
-  setOpp(w: number) { return this.sendFloat(OPP, w); }
-  setOtp(t: number) { return this.sendFloat(OTP, t); }
-  setLvp(v: number) { return this.sendFloat(LVP, v); }
-  setGroupV(idx: number, v: number) { return this.sendFloat(GROUP_VSET[idx], v); }
-  setGroupC(idx: number, a: number) { return this.sendFloat(GROUP_CSET[idx], a); }
+  setVoltage(v: number) {
+    return this.sendFloat(VOLTAGE_SET, v);
+  }
+  setCurrent(a: number) {
+    return this.sendFloat(CURRENT_SET, a);
+  }
+  setOvp(v: number) {
+    return this.sendFloat(OVP, v);
+  }
+  setOcp(a: number) {
+    return this.sendFloat(OCP, a);
+  }
+  setOpp(w: number) {
+    return this.sendFloat(OPP, w);
+  }
+  setOtp(t: number) {
+    return this.sendFloat(OTP, t);
+  }
+  setLvp(v: number) {
+    return this.sendFloat(LVP, v);
+  }
+  setGroupV(idx: number, v: number) {
+    return this.sendFloat(GROUP_VSET[idx], v);
+  }
+  setGroupC(idx: number, a: number) {
+    return this.sendFloat(GROUP_CSET[idx], a);
+  }
 
-  async enable()  { await this.send(HEADER_OUTPUT, CMD_SET, OUTPUT_ENABLE, [1]); }
-  async disable() { await this.send(HEADER_OUTPUT, CMD_SET, OUTPUT_ENABLE, [0]); }
-  async refresh() { await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0]); }
+  async enable() {
+    await this.send(HEADER_OUTPUT, CMD_SET, OUTPUT_ENABLE, [1]);
+  }
+  async disable() {
+    await this.send(HEADER_OUTPUT, CMD_SET, OUTPUT_ENABLE, [0]);
+  }
+  async refresh() {
+    await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0]);
+  }
 
   private parseData(c3: number, c5: Uint8Array) {
     const view = new DataView(c5.buffer, c5.byteOffset, c5.byteLength);
     switch (c3) {
-      case 192: this.listener({ inputVoltage: view.getFloat32(0, true) }); break;
+      case 192:
+        this.listener({ inputVoltage: view.getFloat32(0, true) });
+        break;
       case 195:
         this.listener({
           outputVoltage: view.getFloat32(0, true),
@@ -232,17 +283,39 @@ export class DPS150 {
           outputPower: view.getFloat32(8, true),
         });
         break;
-      case 196: this.listener({ temperature: view.getFloat32(0, true) }); break;
-      case 217: this.listener({ outputCapacity: view.getFloat32(0, true) }); break;
-      case 218: this.listener({ outputEnergy: view.getFloat32(0, true) }); break;
-      case 219: this.listener({ outputClosed: c5[0] === 1 }); break;
-      case 220: this.listener({ protectionState: PROTECTION_STATES[c5[0]] || "" }); break;
-      case 221: this.listener({ mode: c5[0] === 0 ? "CC" : "CV" }); break;
-      case 222: this.listener({ modelName: String.fromCharCode(...c5).trim() }); break;
-      case 223: this.listener({ hardwareVersion: String.fromCharCode(...c5).trim() }); break;
-      case 224: this.listener({ firmwareVersion: String.fromCharCode(...c5).trim() }); break;
-      case 226: this.listener({ upperLimitVoltage: view.getFloat32(0, true) }); break;
-      case 227: this.listener({ upperLimitCurrent: view.getFloat32(0, true) }); break;
+      case 196:
+        this.listener({ temperature: view.getFloat32(0, true) });
+        break;
+      case 217:
+        this.listener({ outputCapacity: view.getFloat32(0, true) });
+        break;
+      case 218:
+        this.listener({ outputEnergy: view.getFloat32(0, true) });
+        break;
+      case 219:
+        this.listener({ outputClosed: c5[0] === 1 });
+        break;
+      case 220:
+        this.listener({ protectionState: PROTECTION_STATES[c5[0]] || "" });
+        break;
+      case 221:
+        this.listener({ mode: c5[0] === 0 ? "CC" : "CV" });
+        break;
+      case 222:
+        this.listener({ modelName: String.fromCharCode(...c5).trim() });
+        break;
+      case 223:
+        this.listener({ hardwareVersion: String.fromCharCode(...c5).trim() });
+        break;
+      case 224:
+        this.listener({ firmwareVersion: String.fromCharCode(...c5).trim() });
+        break;
+      case 226:
+        this.listener({ upperLimitVoltage: view.getFloat32(0, true) });
+        break;
+      case 227:
+        this.listener({ upperLimitCurrent: view.getFloat32(0, true) });
+        break;
       case 255: {
         const groups = Array.from({ length: 6 }, (_, i) => ({
           v: view.getFloat32(28 + i * 8, true),
@@ -295,8 +368,12 @@ declare global {
     flowControl?: "none" | "hardware";
   }
   interface Serial {
-    requestPort(opts?: { filters?: { usbVendorId?: number; usbProductId?: number }[] }): Promise<SerialPort>;
+    requestPort(opts?: {
+      filters?: { usbVendorId?: number; usbProductId?: number }[];
+    }): Promise<SerialPort>;
     getPorts(): Promise<SerialPort[]>;
   }
-  interface Navigator { serial: Serial; }
+  interface Navigator {
+    serial: Serial;
+  }
 }

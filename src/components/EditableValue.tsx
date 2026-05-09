@@ -15,8 +15,16 @@ interface Props {
 }
 
 export function EditableValue({
-  value, unit, label, decimals = 3, step = 0.01, min = 0, max = 9999,
-  onCommit, disabled, accent = "voltage",
+  value,
+  unit,
+  label,
+  decimals = 3,
+  step = 0.01,
+  min = 0,
+  max = 9999,
+  onCommit,
+  disabled,
+  accent = "voltage",
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -52,9 +60,7 @@ export function EditableValue({
   };
 
   const accentClass =
-    accent === "current" ? "text-amp" :
-    accent === "power"   ? "text-power"   :
-    "text-voltage";
+    accent === "current" ? "text-amp" : accent === "power" ? "text-power" : "text-voltage";
 
   return (
     <div className="flex flex-col">
@@ -65,7 +71,12 @@ export function EditableValue({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => { if (!disabled) { setDraft(value.toFixed(decimals)); setEditing(true); } }}
+        onClick={() => {
+          if (!disabled) {
+            setDraft(value.toFixed(decimals));
+            setEditing(true);
+          }
+        }}
         className={cn(
           "group mt-1 flex items-baseline gap-2 rounded-md px-2 py-1 -mx-2 transition-colors",
           "hover:bg-accent/50 focus:bg-accent/60 focus:outline-none",
