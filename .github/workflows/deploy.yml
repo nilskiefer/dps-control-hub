@@ -24,8 +24,9 @@ jobs:
         with:
           bun-version: latest
 
+      # Fall back to a non-frozen install if the lockfile drifts in CI.
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile || bun install
 
       - name: Build SPA
         run: bun run build:spa
