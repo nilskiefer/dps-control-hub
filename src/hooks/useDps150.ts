@@ -80,7 +80,17 @@ export function useDps150() {
       addLog("info", "Opening browser serial port picker");
       const port = await navigator.serial.requestPort();
       addLog("info", `Selected port: ${formatPortInfo(port)}`);
-      const dev = new DPS150(port, apply, addLog);
+      const dev = new DPS150(port, apply, addLog, (error) => {
+        addLog("error", `Serial transport stopped: ${error.message}`);
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          addLog("info", "Stopped refresh loop after serial reader failure");
+        }
+        deviceRef.current = null;
+        setState((prev) => ({ ...prev, connected: false }));
+        setError(`Serial reader stopped: ${error.message}`);
+      });
       deviceRef.current = dev;
       await dev.start();
       pollRef.current = window.setInterval(() => {

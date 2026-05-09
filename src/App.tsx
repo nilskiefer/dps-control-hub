@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { useDps150 } from "@/hooks/useDps150";
 import { Readout } from "@/components/Readout";
 import { EditableValue } from "@/components/EditableValue";
@@ -12,6 +13,7 @@ import {
   AlertTriangle,
   Terminal,
   Trash2,
+  ArrowDownToLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SerialLogEntry } from "@/hooks/useDps150";
@@ -343,6 +345,16 @@ export default function App() {
 }
 
 function SerialConsole({ entries, onClear }: { entries: SerialLogEntry[]; onClear: () => void }) {
+  const [autoscroll, setAutoscroll] = useState(true);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!autoscroll) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [autoscroll, entries]);
+
   return (
     <section className="panel p-4 mb-8">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -352,12 +364,24 @@ function SerialConsole({ entries, onClear }: { entries: SerialLogEntry[]; onClea
             Serial Console
           </h2>
         </div>
-        <Button variant="secondary" size="sm" onClick={onClear} disabled={entries.length === 0}>
-          <Trash2 className="size-4" /> Clear
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={autoscroll ? "default" : "secondary"}
+            size="sm"
+            onClick={() => setAutoscroll((value) => !value)}
+          >
+            <ArrowDownToLine className="size-4" /> Auto
+          </Button>
+          <Button variant="secondary" size="sm" onClick={onClear} disabled={entries.length === 0}>
+            <Trash2 className="size-4" /> Clear
+          </Button>
+        </div>
       </div>
 
-      <div className="h-56 overflow-auto rounded-md border border-border bg-background/70 p-3 font-mono text-[11px] leading-relaxed">
+      <div
+        ref={scrollRef}
+        className="h-56 overflow-auto rounded-md border border-border bg-background/70 p-3 font-mono text-[11px] leading-relaxed"
+      >
         {entries.length === 0 ? (
           <div className="text-muted-foreground">
             Waiting for serial activity. Click Connect to start logging.

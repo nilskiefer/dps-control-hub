@@ -96,6 +96,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export type Listener = (patch: Partial<DeviceState>) => void;
 export type DpsLogLevel = "info" | "success" | "warn" | "error";
 export type DpsLogger = (level: DpsLogLevel, message: string) => void;
+export type DpsTransportErrorHandler = (error: Error) => void;
 
 const noopLogger: DpsLogger = () => {};
 
@@ -112,13 +113,21 @@ export class DPS150 {
   reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   listener: Listener;
   private log: DpsLogger;
+  private onTransportError?: DpsTransportErrorHandler;
   private writeLock = Promise.resolve();
   private stopped = false;
+  private readerHealthy = true;
 
-  constructor(port: SerialPort, listener: Listener, log: DpsLogger = noopLogger) {
+  constructor(
+    port: SerialPort,
+    listener: Listener,
+    log: DpsLogger = noopLogger,
+    onTransportError?: DpsTransportErrorHandler,
+  ) {
     this.port = port;
     this.listener = listener;
     this.log = log;
+    this.onTransportError = onTransportError;
   }
 
   async start() {
@@ -217,8 +226,12 @@ export class DPS150 {
           buffer = buffer.subarray(i);
         }
       } catch (e) {
-        this.log("error", `Serial read failed: ${e instanceof Error ? e.message : String(e)}`);
-        console.warn("read error", e);
+        const error = e instanceof Error ? e : new Error(String(e));
+        this.readerHealthy = false;
+        this.listener({ connected: false });
+        this.log("error", `Serial read failed: ${error.message}`);
+        this.onTransportError?.(error);
+        console.warn("read error", error);
         return;
       } finally {
         try {
@@ -240,11 +253,20 @@ export class DPS150 {
     await this.send(HEADER_OUTPUT, CMD_GET, HARDWARE_VERSION, [0]);
     await this.send(HEADER_OUTPUT, CMD_GET, FIRMWARE_VERSION, [0]);
     await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0]);
+    if (!this.readerHealthy) {
+      throw new Error("Serial reader stopped during startup. The device was opened but then lost.");
+    }
     this.listener({ connected: true });
     this.log("success", "DPS-150 command session ready");
   }
 
-  private async send(c1: number, c2: number, c3: number, payload: number[] | Uint8Array) {
+  private async send(
+    c1: number,
+    c2: number,
+    c3: number,
+    payload: number[] | Uint8Array,
+    logTx = true,
+  ) {
     const arr = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
     const c4 = arr.length;
     let c6 = c3 + c4;
@@ -265,7 +287,9 @@ export class DPS150 {
     try {
       const writer = this.port.writable!.getWriter();
       try {
-        this.log("info", `TX cmd 0x${c2.toString(16)} addr 0x${c3.toString(16)} (${c4} bytes)`);
+        if (logTx) {
+          this.log("info", `TX cmd 0x${c2.toString(16)} addr 0x${c3.toString(16)} (${c4} bytes)`);
+        }
         await writer.write(out);
         await sleep(40);
       } finally {
@@ -321,7 +345,7 @@ export class DPS150 {
     await this.refresh();
   }
   async refresh() {
-    await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0]);
+    await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0], false);
   }
 
   private parseData(c3: number, c5: Uint8Array) {
