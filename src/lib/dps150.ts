@@ -167,9 +167,9 @@ export class DPS150 {
       this.log("info", `Waiting ${this.options.startupDelayMs} ms for serial bridge to settle`);
       await sleep(this.options.startupDelayMs);
     }
+    await this.initCommand();
     this.log("info", "Starting reader loop");
     this.startReader();
-    await this.initCommand();
   }
 
   private async openWithFallback() {
