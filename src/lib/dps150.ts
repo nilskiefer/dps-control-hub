@@ -94,47 +94,91 @@ export const initialState: DeviceState = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type Listener = (patch: Partial<DeviceState>) => void;
+export type DpsLogLevel = "info" | "success" | "warn" | "error";
+export type DpsLogger = (level: DpsLogLevel, message: string) => void;
+
+const noopLogger: DpsLogger = () => {};
+
+function formatPortInfo(port: SerialPort) {
+  const info = port.getInfo();
+  const vendor = info.usbVendorId == null ? "unknown" : `0x${info.usbVendorId.toString(16)}`;
+  const product = info.usbProductId == null ? "unknown" : `0x${info.usbProductId.toString(16)}`;
+
+  return `USB vendor ${vendor}, product ${product}`;
+}
 
 export class DPS150 {
   port: SerialPort;
   reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   listener: Listener;
+  private log: DpsLogger;
   private writeLock = Promise.resolve();
   private stopped = false;
 
-  constructor(port: SerialPort, listener: Listener) {
+  constructor(port: SerialPort, listener: Listener, log: DpsLogger = noopLogger) {
     this.port = port;
     this.listener = listener;
+    this.log = log;
   }
 
   async start() {
-    await this.port.open({
-      baudRate: 115200,
-      bufferSize: 1024,
-      dataBits: 8,
-      stopBits: 1,
-      flowControl: "hardware",
-      parity: "none",
-    });
+    this.log("info", `Opening serial port (${formatPortInfo(this.port)}) at 115200 baud`);
+    try {
+      await this.open("hardware");
+    } catch (error) {
+      this.log(
+        "warn",
+        `Open with hardware flow control failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      this.log("info", "Retrying open with flow control disabled");
+      await this.open("none");
+    }
+    this.log("success", "Serial port open");
+    this.log("info", "Starting reader loop");
     this.startReader();
     await this.initCommand();
   }
 
+  private open(flowControl: FlowControlType) {
+    return this.port.open({
+      baudRate: 115200,
+      bufferSize: 1024,
+      dataBits: 8,
+      stopBits: 1,
+      flowControl,
+      parity: "none",
+    });
+  }
+
   async stop() {
     this.stopped = true;
+    this.log("info", "Disconnecting serial session");
     try {
       await this.send(HEADER_OUTPUT, CMD_SESSION, 0, [0]);
     } catch (error) {
+      this.log(
+        "warn",
+        `Failed to close DPS session: ${error instanceof Error ? error.message : String(error)}`,
+      );
       console.debug("Failed to close DPS session", error);
     }
     try {
       await this.reader?.cancel();
     } catch (error) {
+      this.log(
+        "warn",
+        `Failed to cancel serial reader: ${error instanceof Error ? error.message : String(error)}`,
+      );
       console.debug("Failed to cancel DPS reader", error);
     }
     try {
       await this.port.close();
+      this.log("success", "Serial port closed");
     } catch (error) {
+      this.log(
+        "warn",
+        `Failed to close serial port: ${error instanceof Error ? error.message : String(error)}`,
+      );
       console.debug("Failed to close serial port", error);
     }
   }
@@ -173,6 +217,7 @@ export class DPS150 {
           buffer = buffer.subarray(i);
         }
       } catch (e) {
+        this.log("error", `Serial read failed: ${e instanceof Error ? e.message : String(e)}`);
         console.warn("read error", e);
         return;
       } finally {
@@ -186,13 +231,17 @@ export class DPS150 {
   }
 
   private async initCommand() {
+    this.log("info", "Entering DPS command session");
     await this.send(HEADER_OUTPUT, CMD_SESSION, 0, [1]);
+    this.log("info", "Setting DPS baud profile to 115200");
     await this.send(HEADER_OUTPUT, CMD_BAUD, 0, [5]); // 115200
+    this.log("info", "Requesting model, firmware, limits, and live state");
     await this.send(HEADER_OUTPUT, CMD_GET, MODEL_NAME, [0]);
     await this.send(HEADER_OUTPUT, CMD_GET, HARDWARE_VERSION, [0]);
     await this.send(HEADER_OUTPUT, CMD_GET, FIRMWARE_VERSION, [0]);
     await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0]);
     this.listener({ connected: true });
+    this.log("success", "DPS-150 command session ready");
   }
 
   private async send(c1: number, c2: number, c3: number, payload: number[] | Uint8Array) {
@@ -216,6 +265,7 @@ export class DPS150 {
     try {
       const writer = this.port.writable!.getWriter();
       try {
+        this.log("info", `TX cmd 0x${c2.toString(16)} addr 0x${c3.toString(16)} (${c4} bytes)`);
         await writer.write(out);
         await sleep(40);
       } finally {

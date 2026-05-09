@@ -3,11 +3,21 @@ import { Readout } from "@/components/Readout";
 import { EditableValue } from "@/components/EditableValue";
 import { LiveChart } from "@/components/LiveChart";
 import { Button } from "@/components/ui/button";
-import { Plug, Power, Activity, Thermometer, Zap, AlertTriangle } from "lucide-react";
+import {
+  Plug,
+  Power,
+  Activity,
+  Thermometer,
+  Zap,
+  AlertTriangle,
+  Terminal,
+  Trash2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { SerialLogEntry } from "@/hooks/useDps150";
 
 export default function App() {
-  const { state, error, connect, disconnect, device } = useDps150();
+  const { state, error, logEntries, connect, disconnect, clearLog, device } = useDps150();
   const dev = device.current;
   const connected = state.connected;
   const outputOn = connected && !state.outputClosed;
@@ -289,10 +299,59 @@ export default function App() {
           </div>
         </section>
 
+        <SerialConsole entries={logEntries} onClear={clearLog} />
+
         <footer className="text-center text-[11px] text-muted-foreground font-mono">
           Web Serial · 115200 baud · Requires Chrome / Edge / Opera over HTTPS
         </footer>
       </div>
+    </div>
+  );
+}
+
+function SerialConsole({ entries, onClear }: { entries: SerialLogEntry[]; onClear: () => void }) {
+  return (
+    <section className="panel p-4 mb-8">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Terminal className="size-4 text-primary" />
+          <h2 className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
+            Serial Console
+          </h2>
+        </div>
+        <Button variant="secondary" size="sm" onClick={onClear} disabled={entries.length === 0}>
+          <Trash2 className="size-4" /> Clear
+        </Button>
+      </div>
+
+      <div className="h-56 overflow-auto rounded-md border border-border bg-background/70 p-3 font-mono text-[11px] leading-relaxed">
+        {entries.length === 0 ? (
+          <div className="text-muted-foreground">
+            Waiting for serial activity. Click Connect to start logging.
+          </div>
+        ) : (
+          entries.map((entry) => <ConsoleLine key={entry.id} entry={entry} />)
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ConsoleLine({ entry }: { entry: SerialLogEntry }) {
+  const levelClass =
+    entry.level === "error"
+      ? "text-destructive"
+      : entry.level === "warn"
+        ? "text-voltage"
+        : entry.level === "success"
+          ? "text-power"
+          : "text-muted-foreground";
+
+  return (
+    <div className="grid grid-cols-[4.5rem_4.25rem_minmax(0,1fr)] gap-2 py-0.5">
+      <span className="text-muted-foreground">{entry.time}</span>
+      <span className={cn("uppercase", levelClass)}>{entry.level}</span>
+      <span className="break-words text-foreground">{entry.message}</span>
     </div>
   );
 }
