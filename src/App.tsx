@@ -17,15 +17,35 @@ import { cn } from "@/lib/utils";
 import type { SerialLogEntry } from "@/hooks/useDps150";
 
 export default function App() {
-  const { state, error, logEntries, connect, disconnect, clearLog, device } = useDps150();
+  const { state, error, logEntries, log, connect, disconnect, clearLog, device } = useDps150();
   const dev = device.current;
   const connected = state.connected;
-  const outputOn = connected && state.outputClosed;
+  const outputOn = state.outputClosed;
+  const outputControlReady = Boolean(dev);
 
   const toggleOutput = async () => {
-    if (!dev) return;
-    if (outputOn) await dev.disable();
-    else await dev.enable();
+    log(
+      "info",
+      `Output click received (device=${dev ? "yes" : "no"}, connected=${connected ? "yes" : "no"}, outputClosed=${String(state.outputClosed)})`,
+    );
+
+    if (!dev) {
+      log("warn", "Output command not sent: no active serial device handle");
+      return;
+    }
+
+    try {
+      if (outputOn) {
+        log("info", "Output button command: disable");
+        await dev.disable();
+      } else {
+        log("info", "Output button command: enable");
+        await dev.enable();
+      }
+    } catch (e: unknown) {
+      const error = e instanceof Error ? e : new Error(String(e));
+      log("error", `Output command failed: ${error.name}: ${error.message}`);
+    }
   };
 
   return (
@@ -125,7 +145,20 @@ export default function App() {
 
             <button
               type="button"
-              disabled={!connected}
+              aria-disabled={!outputControlReady}
+              title={
+                outputControlReady
+                  ? outputOn
+                    ? "Disable output"
+                    : "Enable output"
+                  : "Connect to a serial device before toggling output"
+              }
+              onPointerDown={() => {
+                log(
+                  "info",
+                  `Output pointer received (device=${dev ? "yes" : "no"}, connected=${connected ? "yes" : "no"}, outputClosed=${String(state.outputClosed)})`,
+                );
+              }}
               onClick={toggleOutput}
               className={cn(
                 "col-span-2 md:col-span-2 row-span-1 rounded-lg px-5 py-3 font-medium transition-all",
@@ -133,7 +166,7 @@ export default function App() {
                 outputOn
                   ? "bg-destructive text-destructive-foreground border-destructive shadow-[0_0_30px_-5px_var(--destructive)]"
                   : "bg-secondary text-secondary-foreground border-border hover:bg-accent",
-                "disabled:opacity-40 disabled:cursor-not-allowed",
+                !outputControlReady && "opacity-40 cursor-not-allowed",
               )}
             >
               <Power className="size-5" />

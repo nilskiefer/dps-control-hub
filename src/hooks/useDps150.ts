@@ -123,6 +123,7 @@ export function useDps150() {
     state,
     error,
     logEntries,
+    log: addLog,
     connect,
     disconnect,
     clearLog,
