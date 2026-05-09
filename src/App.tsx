@@ -23,29 +23,16 @@ import type { SerialConnectionOptions } from "@/lib/dps150";
 export default function App() {
   const { state, error, logEntries, log, connect, disconnect, clearLog, device } = useDps150();
   const [connectionOptions, setConnectionOptions] = useState(defaultSerialConnectionOptions);
-  const [manualOutputOn, setManualOutputOn] = useState(false);
   const dev = device.current;
   const connected = state.connected;
   const readbackActive = state.readbackActive;
-  const outputOn = readbackActive ? state.outputClosed : manualOutputOn;
+  const outputOn = state.outputClosed;
   const outputControlReady = Boolean(dev);
-
-  useEffect(() => {
-    if (readbackActive) {
-      setManualOutputOn(state.outputClosed);
-    }
-  }, [readbackActive, state.outputClosed]);
-
-  useEffect(() => {
-    if (!connected && !dev) {
-      setManualOutputOn(false);
-    }
-  }, [connected, dev]);
 
   const toggleOutput = async () => {
     log(
       "info",
-      `Output click received (device=${dev ? "yes" : "no"}, connected=${connected ? "yes" : "no"}, outputClosed=${String(state.outputClosed)})`,
+      `Output click received (device=${dev ? "yes" : "no"}, connected=${connected ? "yes" : "no"}, output=${outputOn ? "on" : "off"}, readback=${readbackActive ? "active" : "write-only"})`,
     );
 
     if (!dev) {
@@ -57,11 +44,9 @@ export default function App() {
       if (outputOn) {
         log("info", "Output button command: disable");
         await dev.disable();
-        setManualOutputOn(false);
       } else {
         log("info", "Output button command: enable");
         await dev.enable();
-        setManualOutputOn(true);
       }
     } catch (e: unknown) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -127,7 +112,6 @@ export default function App() {
                 log("info", "Force output off");
                 try {
                   await dev.disable();
-                  setManualOutputOn(false);
                 } catch (e: unknown) {
                   const error = e instanceof Error ? e : new Error(String(e));
                   log("error", `Force output off failed: ${error.name}: ${error.message}`);
@@ -207,7 +191,7 @@ export default function App() {
               onPointerDown={() => {
                 log(
                   "info",
-                  `Output pointer received (device=${dev ? "yes" : "no"}, connected=${connected ? "yes" : "no"}, outputClosed=${String(state.outputClosed)})`,
+                  `Output pointer received (device=${dev ? "yes" : "no"}, connected=${connected ? "yes" : "no"}, output=${outputOn ? "on" : "off"}, readback=${readbackActive ? "active" : "write-only"})`,
                 );
               }}
               onClick={toggleOutput}

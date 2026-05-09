@@ -440,16 +440,25 @@ export class DPS150 {
     this.log("info", "Enabling output");
     await this.send(HEADER_OUTPUT, CMD_SET, OUTPUT_ENABLE, [1]);
     this.listener({ outputClosed: true });
-    await this.refresh();
+    await this.refreshIfReadable("output enable");
   }
   async disable() {
     this.log("info", "Disabling output");
     await this.send(HEADER_OUTPUT, CMD_SET, OUTPUT_ENABLE, [0]);
     this.listener({ outputClosed: false });
-    await this.refresh();
+    await this.refreshIfReadable("output disable");
   }
   async refresh() {
     await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0], false);
+  }
+
+  private async refreshIfReadable(reason: string) {
+    if (!this.port.readable) {
+      this.log("info", `Skipping ${reason} refresh because readback is unavailable`);
+      return;
+    }
+
+    await this.refresh();
   }
 
   private parseData(c3: number, c5: Uint8Array) {
