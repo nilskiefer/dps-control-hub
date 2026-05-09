@@ -320,8 +320,8 @@ def main() -> int:
     parser.add_argument(
         "--backend",
         choices=("pyserial", "raw"),
-        default="pyserial",
-        help="pyserial matches common tools; raw uses os.read/termios directly.",
+        default="raw",
+        help="raw uses os.read/termios directly; pyserial matches common tools.",
     )
     parser.add_argument("--rtscts", action="store_true", help="Enable hardware flow control.")
     parser.add_argument("--dtr", choices=("on", "off"), help="Set DTR before opening.")
