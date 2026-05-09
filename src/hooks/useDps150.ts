@@ -103,7 +103,8 @@ export function useDps150() {
               pollRef.current = null;
               addLog("info", "Stopped refresh loop after serial reader failure");
             }
-            setState((prev) => ({ ...prev, connected: false }));
+            deviceRef.current = null;
+            setState((prev) => ({ ...prev, connected: false, readbackActive: false }));
             setError(`Serial reader stopped: ${error.message}`);
           },
           options,

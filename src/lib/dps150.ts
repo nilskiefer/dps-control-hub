@@ -307,6 +307,7 @@ export class DPS150 {
         } catch (error) {
           console.debug("Failed to release serial reader lock", error);
         }
+        if (this.reader === reader) this.reader = null;
       }
       await sleep(250);
     }
@@ -320,8 +321,23 @@ export class DPS150 {
       } else {
         this.listener({ connected: false, readbackActive: false });
         this.log("error", error.message);
+        await this.closeAfterTransportFailure();
         this.onTransportError?.(error);
       }
+    }
+  }
+
+  private async closeAfterTransportFailure() {
+    this.stopped = true;
+    this.log("info", "Closing serial port after reader failure");
+    try {
+      await this.port.close();
+      this.log("success", "Serial port closed");
+    } catch (error) {
+      this.log(
+        "warn",
+        `Failed to close serial port after reader failure: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
