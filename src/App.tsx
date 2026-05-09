@@ -346,7 +346,7 @@ export default function App() {
         <SerialConsole entries={logEntries} onClear={clearLog} />
 
         <footer className="text-center text-[11px] text-muted-foreground font-mono">
-          Web Serial · 115200 baud · Requires Chrome / Edge / Opera over HTTPS
+          Web Serial · 9600 baud default · Requires Chrome / Edge / Opera over HTTPS
         </footer>
       </div>
     </div>

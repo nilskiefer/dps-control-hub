@@ -32,6 +32,7 @@ const FIRMWARE_VERSION = 224;
 const ALL = 255;
 
 const PROTECTION_STATES = ["", "OVP", "OCP", "OPP", "OTP", "LVP", "REP"];
+const BAUD_PROFILES = [9600, 19200, 38400, 57600, 115200] as const;
 
 export interface DeviceState {
   connected: boolean;
@@ -107,7 +108,7 @@ export interface SerialConnectionOptions {
 }
 
 export const defaultSerialConnectionOptions: SerialConnectionOptions = {
-  baudRate: 115200,
+  baudRate: 9600,
   flowControl: "hardware",
   dataTerminalReady: true,
   requestToSend: true,
@@ -305,8 +306,8 @@ export class DPS150 {
     this.log("info", "Entering DPS command session");
     await this.send(HEADER_OUTPUT, CMD_SESSION, 0, [1]);
     this.assertReaderHealthy();
-    this.log("info", "Setting DPS baud profile to 115200");
-    await this.send(HEADER_OUTPUT, CMD_BAUD, 0, [5]); // 115200
+    this.log("info", `Setting DPS baud profile to ${this.options.baudRate}`);
+    await this.send(HEADER_OUTPUT, CMD_BAUD, 0, [this.getBaudProfile()]);
     this.assertReaderHealthy();
     this.log("info", "Requesting model, firmware, limits, and live state");
     await this.send(HEADER_OUTPUT, CMD_GET, MODEL_NAME, [0]);
@@ -325,6 +326,14 @@ export class DPS150 {
     if (!this.readerHealthy) {
       throw new Error("Serial reader stopped during startup. The device was opened but then lost.");
     }
+  }
+
+  private getBaudProfile() {
+    const profile = BAUD_PROFILES.indexOf(this.options.baudRate as (typeof BAUD_PROFILES)[number]);
+    if (profile === -1) {
+      throw new Error(`Unsupported DPS baud profile: ${this.options.baudRate}`);
+    }
+    return profile + 1;
   }
 
   private async send(
