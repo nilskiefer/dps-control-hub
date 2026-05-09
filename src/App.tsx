@@ -20,7 +20,7 @@ export default function App() {
   const { state, error, logEntries, connect, disconnect, clearLog, device } = useDps150();
   const dev = device.current;
   const connected = state.connected;
-  const outputOn = connected && !state.outputClosed;
+  const outputOn = connected && state.outputClosed;
 
   const toggleOutput = async () => {
     if (!dev) return;

@@ -74,7 +74,7 @@ export const initialState: DeviceState = {
   setVoltage: 0,
   setCurrent: 0,
   temperature: 0,
-  outputClosed: true,
+  outputClosed: false,
   mode: "CV",
   protectionState: "",
   outputCapacity: 0,
@@ -311,10 +311,14 @@ export class DPS150 {
   }
 
   async enable() {
+    this.log("info", "Enabling output");
     await this.send(HEADER_OUTPUT, CMD_SET, OUTPUT_ENABLE, [1]);
+    await this.refresh();
   }
   async disable() {
+    this.log("info", "Disabling output");
     await this.send(HEADER_OUTPUT, CMD_SET, OUTPUT_ENABLE, [0]);
+    await this.refresh();
   }
   async refresh() {
     await this.send(HEADER_OUTPUT, CMD_GET, ALL, [0]);
