@@ -99,26 +99,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export type Listener = (patch: Partial<DeviceState>) => void;
 export type DpsLogLevel = "info" | "success" | "warn" | "error";
 export type DpsLogger = (level: DpsLogLevel, message: string) => void;
-export type DpsTransportErrorHandler = (error: Error) => void;
 
 export interface SerialConnectionOptions {
   baudRate: number;
   flowControl: FlowControlType | "auto";
-  manageSignals: boolean;
-  dataTerminalReady: boolean;
-  requestToSend: boolean;
-  startupDelayMs: number;
-  keepWriteOnlyOnReadFailure: boolean;
 }
 
 export const defaultSerialConnectionOptions: SerialConnectionOptions = {
   baudRate: 9600,
   flowControl: "hardware",
-  manageSignals: false,
-  dataTerminalReady: false,
-  requestToSend: false,
-  startupDelayMs: 0,
-  keepWriteOnlyOnReadFailure: true,
 };
 
 const noopLogger: DpsLogger = () => {};
@@ -136,7 +125,6 @@ export class DPS150 {
   reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   listener: Listener;
   private log: DpsLogger;
-  private onTransportError?: DpsTransportErrorHandler;
   private options: SerialConnectionOptions;
   private writeLock = Promise.resolve();
   private stopped = false;
@@ -145,13 +133,11 @@ export class DPS150 {
     port: SerialPort,
     listener: Listener,
     log: DpsLogger = noopLogger,
-    onTransportError?: DpsTransportErrorHandler,
     options: SerialConnectionOptions = defaultSerialConnectionOptions,
   ) {
     this.port = port;
     this.listener = listener;
     this.log = log;
-    this.onTransportError = onTransportError;
     this.options = options;
   }
 
@@ -162,11 +148,6 @@ export class DPS150 {
     );
     await this.openWithFallback();
     this.log("success", "Serial port open");
-    await this.configureSignals();
-    if (this.options.startupDelayMs > 0) {
-      this.log("info", `Waiting ${this.options.startupDelayMs} ms for serial bridge to settle`);
-      await sleep(this.options.startupDelayMs);
-    }
     await this.initCommand();
     this.log("info", "Starting reader loop");
     this.startReader();
@@ -203,29 +184,6 @@ export class DPS150 {
       flowControl,
       parity: "none",
     });
-  }
-
-  private async configureSignals() {
-    if (!this.options.manageSignals) {
-      this.log("info", "Leaving DTR/RTS unchanged");
-      return;
-    }
-
-    try {
-      await this.port.setSignals({
-        dataTerminalReady: this.options.dataTerminalReady,
-        requestToSend: this.options.requestToSend,
-      });
-      this.log(
-        "info",
-        `Serial signals set: DTR=${this.options.dataTerminalReady ? "on" : "off"}, RTS=${this.options.requestToSend ? "on" : "off"}`,
-      );
-    } catch (error) {
-      this.log(
-        "warn",
-        `Failed to set serial signals: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
   }
 
   async stop() {
@@ -315,28 +273,14 @@ export class DPS150 {
     if (!this.stopped) {
       const error = new Error("Serial reader stopped; the port is no longer readable");
       this.log("warn", error.message);
-      if (this.options.keepWriteOnlyOnReadFailure) {
-        this.listener({ readbackActive: false });
-        this.log("warn", "Continuing in write-only mode; telemetry/readback is unavailable");
-      } else {
-        this.listener({ connected: false, readbackActive: false });
-        this.log("error", error.message);
-        await this.closeAfterTransportFailure();
-        this.onTransportError?.(error);
-      }
-    }
-  }
-
-  private async closeAfterTransportFailure() {
-    this.stopped = true;
-    this.log("info", "Closing serial port after reader failure");
-    try {
-      await this.port.close();
-      this.log("success", "Serial port closed");
-    } catch (error) {
+      this.listener({ readbackActive: false });
       this.log(
         "warn",
-        `Failed to close serial port after reader failure: ${error instanceof Error ? error.message : String(error)}`,
+        "Write-only mode active: commands can still be sent, but telemetry/readback is unavailable",
+      );
+      this.log(
+        "warn",
+        "Likely readback causes: the USB serial bridge stopped the read stream, another tool touched the port, the cable/device reset, or the browser Web Serial read side failed. Disconnect and reconnect to restore live telemetry.",
       );
     }
   }
@@ -416,7 +360,7 @@ export class DPS150 {
   }
 
   async setVoltage(v: number) {
-    this.log("info", `Setting voltage to ${v.toFixed(3)} V`);
+    this.log("info", `Setting voltage to ${v.toFixed(2)} V`);
     await this.sendFloat(VOLTAGE_SET, v);
     this.listener({ setVoltage: v });
   }

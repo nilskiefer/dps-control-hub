@@ -80,7 +80,7 @@ export function useDps150() {
       addLog("info", "Connect requested");
       addLog(
         "info",
-        `Connect settings: baud=${options.baudRate}, flow=${options.flowControl}, signals=${options.manageSignals ? "managed" : "unchanged"}, DTR=${options.dataTerminalReady ? "on" : "off"}, RTS=${options.requestToSend ? "on" : "off"}, delay=${options.startupDelayMs}ms, writeOnlyFallback=${options.keepWriteOnlyOnReadFailure ? "on" : "off"}`,
+        `Connect settings: baud=${options.baudRate}, flow=${options.flowControl}`,
       );
       if (!("serial" in navigator)) {
         const message = "Web Serial not supported. Use Chrome, Edge, or Opera over HTTPS.";
@@ -96,17 +96,6 @@ export function useDps150() {
           port,
           apply,
           addLog,
-          (error) => {
-            addLog("error", `Serial transport stopped: ${error.message}`);
-            if (pollRef.current) {
-              clearInterval(pollRef.current);
-              pollRef.current = null;
-              addLog("info", "Stopped refresh loop after serial reader failure");
-            }
-            deviceRef.current = null;
-            setState((prev) => ({ ...prev, connected: false, readbackActive: false }));
-            setError(`Serial reader stopped: ${error.message}`);
-          },
           options,
         );
         deviceRef.current = dev;

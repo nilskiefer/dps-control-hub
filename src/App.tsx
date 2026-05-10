@@ -68,11 +68,14 @@ export default function App() {
               <h1 className="text-lg font-semibold tracking-tight">
                 DPS-150 <span className="text-muted-foreground font-normal">Web Console</span>
               </h1>
-              <p className="text-xs text-muted-foreground font-mono">
-                {connected
-                  ? `${state.modelName || "DPS-150"} · HW ${state.hardwareVersion || "—"} · FW ${state.firmwareVersion || "—"} · ${readbackActive ? "readback" : "write-only"}`
-                  : "Not connected"}
-              </p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+                <span>
+                  {connected
+                    ? `${state.modelName || "DPS-150"} · HW ${state.hardwareVersion || "—"} · FW ${state.firmwareVersion || "—"} · ${readbackActive ? "readback" : "write-only"}`
+                    : "Not connected"}
+                </span>
+                {connected && !readbackActive && <WriteOnlyIndicator />}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -100,29 +103,6 @@ export default function App() {
           </div>
         )}
 
-        {connected && !readbackActive && (
-          <div className="mb-4 panel border-voltage/50 px-4 py-2 text-sm text-voltage flex flex-wrap items-center gap-2">
-            <AlertTriangle className="size-4" />
-            <span>Write-only mode: commands can be sent, but live telemetry is not available.</span>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={async () => {
-                if (!dev) return;
-                log("info", "Force output off");
-                try {
-                  await dev.disable();
-                } catch (e: unknown) {
-                  const error = e instanceof Error ? e : new Error(String(e));
-                  log("error", `Force output off failed: ${error.name}: ${error.message}`);
-                }
-              }}
-            >
-              <Power className="size-4" /> Force Off
-            </Button>
-          </div>
-        )}
-
         {/* Main meter panel */}
         <section className="panel p-5 md:p-7 mb-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
@@ -130,7 +110,7 @@ export default function App() {
               label="Output Voltage"
               value={state.outputVoltage}
               unit="V"
-              decimals={3}
+              decimals={2}
               accent="voltage"
               active={connected}
             />
@@ -390,7 +370,7 @@ function ConnectionSettings({
     "h-8 rounded-md border border-border bg-secondary px-2 text-xs font-mono text-foreground disabled:opacity-50";
 
   return (
-    <section className="mb-4 grid grid-cols-2 gap-3 rounded-md border border-border bg-secondary/30 p-3 md:grid-cols-6">
+    <section className="mb-4 grid grid-cols-2 gap-3 rounded-md border border-border bg-secondary/30 p-3 md:grid-cols-2">
       <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
         Baud
         <select
@@ -425,62 +405,20 @@ function ConnectionSettings({
           <option value="auto">auto</option>
         </select>
       </label>
-
-      <label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        <input
-          type="checkbox"
-          checked={options.manageSignals}
-          disabled={disabled}
-          onChange={(event) => onChange({ ...options, manageSignals: event.target.checked })}
-        />
-        Signals
-      </label>
-
-      <label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        <input
-          type="checkbox"
-          checked={options.dataTerminalReady}
-          disabled={disabled || !options.manageSignals}
-          onChange={(event) => onChange({ ...options, dataTerminalReady: event.target.checked })}
-        />
-        DTR
-      </label>
-
-      <label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        <input
-          type="checkbox"
-          checked={options.requestToSend}
-          disabled={disabled || !options.manageSignals}
-          onChange={(event) => onChange({ ...options, requestToSend: event.target.checked })}
-        />
-        RTS
-      </label>
-
-      <label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        <input
-          type="checkbox"
-          checked={options.keepWriteOnlyOnReadFailure}
-          disabled={disabled}
-          onChange={(event) =>
-            onChange({ ...options, keepWriteOnlyOnReadFailure: event.target.checked })
-          }
-        />
-        Write-only
-      </label>
-
-      <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        Delay ms
-        <input
-          className={controlClass}
-          type="number"
-          min={0}
-          step={50}
-          value={options.startupDelayMs}
-          disabled={disabled}
-          onChange={(event) => onChange({ ...options, startupDelayMs: Number(event.target.value) })}
-        />
-      </label>
     </section>
+  );
+}
+
+function WriteOnlyIndicator() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-destructive"
+      title="Readback offline. Commands still write to the device; disconnect and reconnect to restore telemetry."
+      aria-label="Readback offline, write-only mode active"
+    >
+      <span className="size-2 rounded-full bg-destructive shadow-[0_0_10px_var(--destructive)]" />
+      <AlertTriangle className="size-3.5" />
+    </span>
   );
 }
 
