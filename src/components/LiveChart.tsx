@@ -31,7 +31,9 @@ const MAX_WINDOW_MS = MAX_HISTORY_SECONDS * 1000;
 
 export function LiveChart({ voltage, current, running }: Props) {
   const latest = useRef({ v: voltage, i: current });
+  const chartFrameRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef<{ x: number; domain: [number, number] } | null>(null);
+  const scrollPanRef = useRef<{ x: number; start: number; trackWidth: number } | null>(null);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [autoScale, setAutoScale] = useState(true);
   const [manualVoltageMax, setManualVoltageMax] = useState(30);
@@ -91,10 +93,11 @@ export function LiveChart({ voltage, current, running }: Props) {
     const earliest = samples[0]?.t ?? domain[0];
     const latest = samples.at(-1)?.t ?? domain[1];
     const width = domain[1] - domain[0];
-    const max = Math.max(0, latest - earliest - width);
+    const total = Math.max(width, latest - earliest);
+    const max = Math.max(0, total - width);
     const value = clamp(domain[0] - earliest, 0, max);
 
-    return { earliest, latest, max, value };
+    return { earliest, latest, max, total, value, width };
   }, [samples, domain]);
   const voltageDomain = autoScale ? ([0, "auto"] as const) : ([0, manualVoltageMax] as const);
   const currentDomain = autoScale ? ([0, "auto"] as const) : ([0, manualCurrentMax] as const);
@@ -118,19 +121,28 @@ export function LiveChart({ voltage, current, running }: Props) {
     setFollowLive(clamped[1] >= latest - SAMPLE_INTERVAL_MS);
   };
 
-  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const anchorRatio = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+  useEffect(() => {
+    const element = chartFrameRef.current;
+    if (!element) return;
 
-    if (event.ctrlKey || event.metaKey || event.shiftKey) {
-      zoomBy(event.deltaY > 0 ? 1.18 : 0.84, anchorRatio);
-      return;
-    }
+    const handleNativeWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = element.getBoundingClientRect();
+      const anchorRatio = clamp((event.clientX - rect.left) / rect.width, 0, 1);
 
-    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-    panBy((delta / Math.max(1, rect.width)) * (domain[1] - domain[0]));
-  };
+      if (event.ctrlKey || event.metaKey || event.shiftKey) {
+        zoomBy(event.deltaY > 0 ? 1.18 : 0.84, anchorRatio);
+        return;
+      }
+
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      panBy((delta / Math.max(1, rect.width)) * (domain[1] - domain[0]));
+    };
+
+    element.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleNativeWheel);
+  }, [domain, samples]);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -165,13 +177,50 @@ export function LiveChart({ voltage, current, running }: Props) {
     setFollowLive(true);
   };
 
-  const handleScrollbarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const setScrollbarStart = (start: number) => {
     const width = domain[1] - domain[0];
-    const start = scrollBounds.earliest + Number(event.target.value);
-    const next: [number, number] = [start, start + width];
+    const next = clampDomain([start, start + width], scrollBounds.earliest, scrollBounds.latest);
     setDomain(next);
     setFollowLive(next[1] >= scrollBounds.latest - SAMPLE_INTERVAL_MS);
   };
+
+  const handleScrollbarTrackDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+    setScrollbarStart(scrollBounds.earliest + ratio * scrollBounds.total - scrollBounds.width / 2);
+  };
+
+  const handleScrollbarThumbDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const track = event.currentTarget.parentElement;
+    if (!track) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    scrollPanRef.current = {
+      x: event.clientX,
+      start: domain[0],
+      trackWidth: track.getBoundingClientRect().width,
+    };
+  };
+
+  const handleScrollbarThumbMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrollPanRef.current) return;
+    const delta =
+      ((event.clientX - scrollPanRef.current.x) /
+        Math.max(1, scrollPanRef.current.trackWidth)) *
+      scrollBounds.total;
+    setScrollbarStart(scrollPanRef.current.start + delta);
+  };
+
+  const handleScrollbarThumbUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    scrollPanRef.current = null;
+  };
+
+  const thumbWidthPct = clamp((scrollBounds.width / scrollBounds.total) * 100, 6, 100);
+  const thumbLeftPct =
+    scrollBounds.max === 0 ? 0 : (scrollBounds.value / scrollBounds.max) * (100 - thumbWidthPct);
 
   return (
     <section className="rounded-md border border-border bg-background/40 p-3">
@@ -256,8 +305,8 @@ export function LiveChart({ voltage, current, running }: Props) {
       </div>
 
       <div
+        ref={chartFrameRef}
         className="h-64 min-w-0 cursor-grab touch-none active:cursor-grabbing"
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -339,17 +388,23 @@ export function LiveChart({ voltage, current, running }: Props) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-2">
-        <input
-          className="h-5 w-full accent-primary"
-          type="range"
-          min={0}
-          max={scrollBounds.max}
-          step={SAMPLE_INTERVAL_MS}
-          value={scrollBounds.value}
-          disabled={scrollBounds.max === 0}
-          onChange={handleScrollbarChange}
-        />
+      <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-3">
+        <div
+          className={cn(
+            "relative h-5 rounded-full bg-background/80",
+            scrollBounds.max === 0 ? "opacity-40" : "cursor-pointer",
+          )}
+          onPointerDown={handleScrollbarTrackDown}
+        >
+          <div
+            className="absolute top-1/2 h-4 -translate-y-1/2 cursor-grab rounded-full border border-primary/70 bg-primary/30 shadow-[0_0_18px_-8px_var(--primary)] active:cursor-grabbing"
+            style={{ left: `${thumbLeftPct}%`, width: `${thumbWidthPct}%` }}
+            onPointerDown={handleScrollbarThumbDown}
+            onPointerMove={handleScrollbarThumbMove}
+            onPointerUp={handleScrollbarThumbUp}
+            onPointerCancel={handleScrollbarThumbUp}
+          />
+        </div>
       </div>
       <div className="mt-2 flex justify-between text-[10px] font-mono text-muted-foreground">
         <span>Drag or scroll to pan</span>
