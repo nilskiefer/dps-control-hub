@@ -179,8 +179,8 @@ export default function App() {
                 "col-span-2 md:col-span-2 row-span-1 rounded-lg px-5 py-3 font-medium transition-all",
                 "flex items-center justify-center gap-3 border",
                 outputOn
-                  ? "bg-destructive text-destructive-foreground border-destructive shadow-[0_0_30px_-5px_var(--destructive)]"
-                  : "bg-secondary text-secondary-foreground border-border hover:bg-accent",
+                  ? "bg-power text-background border-power shadow-[0_0_30px_-5px_var(--power)]"
+                  : "bg-destructive text-destructive-foreground border-destructive shadow-[0_0_30px_-5px_var(--destructive)] hover:bg-destructive/90",
                 !outputControlReady && "opacity-40 cursor-not-allowed",
               )}
             >
@@ -196,8 +196,6 @@ export default function App() {
               voltage={state.outputVoltage}
               current={state.outputCurrent}
               running={connected}
-              vMax={state.upperLimitVoltage || 30}
-              iMax={state.upperLimitCurrent || 5}
             />
           </div>
 

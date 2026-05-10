@@ -4,8 +4,6 @@ interface Props {
   voltage: number;
   current: number;
   running: boolean;
-  vMax: number;
-  iMax: number;
 }
 
 interface Sample {
@@ -14,7 +12,7 @@ interface Sample {
   i: number;
 }
 
-export function LiveChart({ voltage, current, running, vMax, iMax }: Props) {
+export function LiveChart({ voltage, current, running }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const samples = useRef<Sample[]>([]);
   const latest = useRef({ v: voltage, i: current });
@@ -52,72 +50,176 @@ export function LiveChart({ voltage, current, running, vMax, iMax }: Props) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
 
-        // grid
-        ctx.strokeStyle = "rgba(255,255,255,0.05)";
+        const plot = {
+          left: 42,
+          right: Math.max(58, w - 42),
+          top: 16,
+          bottom: Math.max(40, h - 24),
+        };
+        const plotW = Math.max(1, plot.right - plot.left);
+        const plotH = Math.max(1, plot.bottom - plot.top);
+        const arr = samples.current;
+        const values = arr.length
+          ? arr
+          : [{ t: Date.now(), v: latest.current.v, i: latest.current.i }];
+        const vScale = niceScale(Math.max(...values.map((s) => s.v), latest.current.v));
+        const iScale = niceScale(Math.max(...values.map((s) => s.i), latest.current.i));
+        const t1 = Date.now();
+        const t0 = t1 - 60_000;
+        const xFor = (t: number) => plot.left + ((t - t0) / 60_000) * plotW;
+        const vYFor = (v: number) => plot.bottom - (v / vScale.max) * plotH;
+        const iYFor = (i: number) => plot.bottom - (i / iScale.max) * plotH;
+        const vColor = getCss("--voltage");
+        const iColor = getCss("--amp");
+        const axisColor = getCss("--muted-foreground");
+
+        ctx.font = "10px JetBrains Mono, ui-monospace, monospace";
+        ctx.textBaseline = "middle";
+
+        ctx.strokeStyle = "rgba(255,255,255,0.06)";
         ctx.lineWidth = 1;
         for (let x = 0; x <= 6; x++) {
+          const gx = plot.left + (x * plotW) / 6;
           ctx.beginPath();
-          ctx.moveTo((x * w) / 6, 0);
-          ctx.lineTo((x * w) / 6, h);
+          ctx.moveTo(gx, plot.top);
+          ctx.lineTo(gx, plot.bottom);
           ctx.stroke();
         }
         for (let y = 0; y <= 4; y++) {
+          const gy = plot.top + (y * plotH) / 4;
           ctx.beginPath();
-          ctx.moveTo(0, (y * h) / 4);
-          ctx.lineTo(w, (y * h) / 4);
+          ctx.moveTo(plot.left, gy);
+          ctx.lineTo(plot.right, gy);
           ctx.stroke();
         }
 
-        const arr = samples.current;
+        ctx.strokeStyle = "rgba(255,255,255,0.18)";
+        ctx.beginPath();
+        ctx.moveTo(plot.left, plot.top);
+        ctx.lineTo(plot.left, plot.bottom);
+        ctx.lineTo(plot.right, plot.bottom);
+        ctx.lineTo(plot.right, plot.top);
+        ctx.stroke();
+
+        ctx.fillStyle = axisColor;
+        ctx.textAlign = "center";
+        ctx.fillText("-60s", plot.left, h - 8);
+        ctx.fillText("-30s", plot.left + plotW / 2, h - 8);
+        ctx.fillText("now", plot.right, h - 8);
+
+        ctx.textAlign = "left";
+        ctx.fillStyle = vColor;
+        ctx.fillText("Voltage (V)", 4, 6);
+        for (let y = 0; y <= 4; y++) {
+          const value = vScale.max - y * vScale.step;
+          ctx.fillText(value.toFixed(2), 4, plot.top + (y * plotH) / 4);
+        }
+
+        ctx.textAlign = "right";
+        ctx.fillStyle = iColor;
+        ctx.fillText("Current (A)", w - 4, 6);
+        for (let y = 0; y <= 4; y++) {
+          const value = iScale.max - y * iScale.step;
+          ctx.fillText(value.toFixed(3), w - 4, plot.top + (y * plotH) / 4);
+        }
+
         if (arr.length > 1) {
-          const t1 = Date.now();
-          const t0 = t1 - 60_000;
-          const xFor = (t: number) => ((t - t0) / 60_000) * w;
-
-          const vColor = getCss("--voltage");
-          const iColor = getCss("--amp");
-
-          // voltage line
           ctx.strokeStyle = vColor;
-          ctx.lineWidth = 1.5;
+          ctx.lineWidth = 2;
           ctx.beginPath();
           arr.forEach((s, i) => {
             const x = xFor(s.t);
-            const y = h - (s.v / Math.max(vMax, 0.1)) * h;
+            const y = vYFor(s.v);
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           });
           ctx.stroke();
 
-          // current line
           ctx.strokeStyle = iColor;
-          ctx.lineWidth = 1.5;
+          ctx.lineWidth = 2;
           ctx.beginPath();
           arr.forEach((s, i) => {
             const x = xFor(s.t);
-            const y = h - (s.i / Math.max(iMax, 0.1)) * h;
+            const y = iYFor(s.i);
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           });
           ctx.stroke();
         }
+
+        const vMarkerY = vYFor(latest.current.v);
+        const iMarkerY = iYFor(latest.current.i);
+        const markerOffset = Math.abs(vMarkerY - iMarkerY) < 14 ? 8 : 0;
+        drawValueMarker(
+          ctx,
+          plot.right,
+          vMarkerY - markerOffset,
+          vColor,
+          `${latest.current.v.toFixed(2)} V`,
+        );
+        drawValueMarker(
+          ctx,
+          plot.right,
+          iMarkerY + markerOffset,
+          iColor,
+          `${latest.current.i.toFixed(3)} A`,
+        );
       }
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [vMax, iMax]);
+  }, []);
 
   return (
     <div className="relative h-40 w-full">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
-      <div className="absolute left-2 top-2 flex gap-3 text-[10px] uppercase tracking-widest">
-        <span className="text-voltage">— V</span>
-        <span className="text-amp">— A</span>
+      <div className="absolute left-12 top-1 flex gap-3 text-[10px] uppercase tracking-widest">
+        <span className="text-voltage">{voltage.toFixed(2)} V</span>
+        <span className="text-amp">{current.toFixed(3)} A</span>
       </div>
-      <div className="absolute right-2 top-2 text-[10px] text-muted-foreground">60s</div>
     </div>
   );
+}
+
+function niceScale(value: number) {
+  const rawMax = Math.max(value, 0.001);
+  const exponent = Math.floor(Math.log10(rawMax));
+  const magnitude = 10 ** exponent;
+  const normalized = rawMax / magnitude;
+  const niceNormalized =
+    normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const max = niceNormalized * magnitude;
+
+  return {
+    max,
+    step: max / 4,
+  };
+}
+
+function drawValueMarker(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  color: string,
+  label: string,
+) {
+  const safeY = Math.min(Math.max(y, 16), ctx.canvas.clientHeight - 24);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x - 6, safeY);
+  ctx.lineTo(x, safeY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, safeY, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.font = "10px JetBrains Mono, ui-monospace, monospace";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x - 8, safeY);
 }
 
 function getCss(name: string) {
