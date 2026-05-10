@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Brush,
   CartesianGrid,
   Legend,
   Line,
@@ -11,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import { Slider } from "@/components/ui/slider";
 
 interface Props {
   voltage: number;
@@ -24,25 +24,19 @@ interface Sample {
   i: number;
 }
 
-interface BrushWindow {
-  startIndex: number;
-  endIndex: number;
-}
-
 const SAMPLE_INTERVAL_MS = 250;
 const MAX_HISTORY_SECONDS = 6 * 60 * 60;
 const DEFAULT_WINDOW_SAMPLES = 240;
 
 export function LiveChart({ voltage, current, running }: Props) {
   const latest = useRef({ v: voltage, i: current });
-  const programmaticBrushUpdate = useRef(false);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [autoScale, setAutoScale] = useState(true);
   const [manualVoltageMax, setManualVoltageMax] = useState(30);
   const [manualCurrentMax, setManualCurrentMax] = useState(5);
   const [followLive, setFollowLive] = useState(true);
   const [windowSamples, setWindowSamples] = useState(DEFAULT_WINDOW_SAMPLES);
-  const [brushWindow, setBrushWindow] = useState<BrushWindow>({ startIndex: 0, endIndex: 0 });
+  const [range, setRange] = useState<[number, number]>([0, 0]);
 
   useEffect(() => {
     latest.current = { v: voltage, i: current };
@@ -75,54 +69,43 @@ export function LiveChart({ voltage, current, running }: Props) {
 
     if (followLive) {
       const startIndex = Math.max(0, latestIndex - windowSamples + 1);
-      programmaticBrushUpdate.current = true;
-      setBrushWindow({ startIndex, endIndex: latestIndex });
+      setRange([startIndex, latestIndex]);
       return;
     }
 
-    setBrushWindow((current) => ({
-      startIndex: clamp(current.startIndex, 0, latestIndex),
-      endIndex: clamp(current.endIndex, 0, latestIndex),
-    }));
+    setRange(([start, end]) => [
+      clamp(start, 0, latestIndex),
+      clamp(end, Math.min(start, latestIndex), latestIndex),
+    ]);
   }, [chartSamples.length, followLive, windowSamples]);
 
   const visibleSamples = useMemo(
-    () => chartSamples.slice(brushWindow.startIndex, brushWindow.endIndex + 1),
-    [chartSamples, brushWindow],
+    () => chartSamples.slice(range[0], range[1] + 1),
+    [chartSamples, range],
   );
   const xDomain = useMemo(
     () => [
-      chartSamples[brushWindow.startIndex]?.t ?? chartSamples[0].t,
-      chartSamples[brushWindow.endIndex]?.t ?? chartSamples.at(-1)!.t,
+      chartSamples[range[0]]?.t ?? chartSamples[0].t,
+      chartSamples[range[1]]?.t ?? chartSamples.at(-1)!.t,
     ],
-    [chartSamples, brushWindow],
+    [chartSamples, range],
   );
   const voltageDomain = autoScale ? ([0, "auto"] as const) : ([0, manualVoltageMax] as const);
   const currentDomain = autoScale ? ([0, "auto"] as const) : ([0, manualCurrentMax] as const);
 
-  const handleBrushChange = (next: { startIndex?: number; endIndex?: number }) => {
-    if (next.startIndex == null || next.endIndex == null) return;
-
+  const handleRangeChange = (next: number[]) => {
     const latestIndex = chartSamples.length - 1;
-    const startIndex = clamp(next.startIndex, 0, latestIndex);
-    const endIndex = clamp(next.endIndex, startIndex, latestIndex);
-
-    setBrushWindow({ startIndex, endIndex });
+    const startIndex = clamp(next[0] ?? 0, 0, latestIndex);
+    const endIndex = clamp(next[1] ?? latestIndex, startIndex, latestIndex);
+    setRange([startIndex, endIndex]);
     setWindowSamples(Math.max(1, endIndex - startIndex + 1));
-
-    if (programmaticBrushUpdate.current) {
-      programmaticBrushUpdate.current = false;
-      return;
-    }
-
     setFollowLive(endIndex === latestIndex);
   };
 
   const jumpLive = () => {
     const latestIndex = chartSamples.length - 1;
     const startIndex = Math.max(0, latestIndex - windowSamples + 1);
-    programmaticBrushUpdate.current = true;
-    setBrushWindow({ startIndex, endIndex: latestIndex });
+    setRange([startIndex, latestIndex]);
     setFollowLive(true);
   };
 
@@ -208,9 +191,9 @@ export function LiveChart({ voltage, current, running }: Props) {
         </div>
       </div>
 
-      <div className="h-80 min-w-0">
+      <div className="h-64 min-w-0">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartSamples} margin={{ top: 10, right: 18, bottom: 16, left: 8 }}>
+          <LineChart data={visibleSamples} margin={{ top: 10, right: 18, bottom: 16, left: 8 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.08)" />
             <XAxis
               dataKey="t"
@@ -286,19 +269,26 @@ export function LiveChart({ voltage, current, running }: Props) {
               animationDuration={220}
               animationEasing="ease-out"
             />
-            <Brush
-              dataKey="t"
-              height={36}
-              travellerWidth={10}
-              startIndex={brushWindow.startIndex}
-              endIndex={brushWindow.endIndex}
-              tickFormatter={(value) => new Date(Number(value)).toLocaleTimeString()}
-              stroke="var(--primary)"
-              fill="var(--secondary)"
-              onChange={handleBrushChange}
-            />
           </LineChart>
         </ResponsiveContainer>
+      </div>
+
+      <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-3">
+        <Slider
+          min={0}
+          max={Math.max(0, chartSamples.length - 1)}
+          step={1}
+          minStepsBetweenThumbs={1}
+          value={range}
+          disabled={chartSamples.length < 2}
+          onValueChange={handleRangeChange}
+          className="h-6"
+        />
+        <div className="mt-1 flex justify-between text-[10px] font-mono text-muted-foreground">
+          <span>{new Date(chartSamples[0].t).toLocaleTimeString()}</span>
+          <span>{formatDuration(visibleSamples)}</span>
+          <span>{followLive ? "live" : new Date(chartSamples.at(-1)!.t).toLocaleTimeString()}</span>
+        </div>
       </div>
     </section>
   );
@@ -319,6 +309,15 @@ function formatWindowLabel(samples: Sample[], live: boolean) {
   const start = new Date(samples[0].t).toLocaleTimeString();
   const end = new Date(samples.at(-1)!.t).toLocaleTimeString();
   return live ? `${start} - live` : `${start} - ${end}`;
+}
+
+function formatDuration(samples: Sample[]) {
+  if (samples.length < 2) return "0s";
+  const seconds = Math.max(0, Math.round((samples.at(-1)!.t - samples[0].t) / 1000));
+  if (seconds < 60) return `${seconds}s visible`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m visible`;
+  return `${Math.round(minutes / 60)}h visible`;
 }
 
 function exportVisibleJson(samples: Sample[]) {
