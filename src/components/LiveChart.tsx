@@ -1,4 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 interface Props {
   voltage: number;
@@ -12,10 +22,15 @@ interface Sample {
   i: number;
 }
 
+const SAMPLE_INTERVAL_MS = 250;
+
 export function LiveChart({ voltage, current, running }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const samples = useRef<Sample[]>([]);
   const latest = useRef({ v: voltage, i: current });
+  const [samples, setSamples] = useState<Sample[]>([]);
+  const [timeScaleSeconds, setTimeScaleSeconds] = useState(60);
+  const [autoScale, setAutoScale] = useState(true);
+  const [manualVoltageMax, setManualVoltageMax] = useState(30);
+  const [manualCurrentMax, setManualCurrentMax] = useState(5);
 
   useEffect(() => {
     latest.current = { v: voltage, i: current };
@@ -23,206 +38,191 @@ export function LiveChart({ voltage, current, running }: Props) {
 
   useEffect(() => {
     if (!running) {
-      samples.current = [];
+      setSamples([]);
       return;
     }
-    const id = setInterval(() => {
-      samples.current.push({ t: Date.now(), v: latest.current.v, i: latest.current.i });
-      const cutoff = Date.now() - 60_000;
-      while (samples.current.length && samples.current[0].t < cutoff) samples.current.shift();
-    }, 250);
-    return () => clearInterval(id);
-  }, [running]);
 
-  useEffect(() => {
-    let raf = 0;
-    const draw = () => {
-      const c = canvasRef.current;
-      if (c) {
-        const dpr = window.devicePixelRatio || 1;
-        const w = c.clientWidth,
-          h = c.clientHeight;
-        if (c.width !== w * dpr || c.height !== h * dpr) {
-          c.width = w * dpr;
-          c.height = h * dpr;
-        }
-        const ctx = c.getContext("2d")!;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, w, h);
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      const cutoff = now - timeScaleSeconds * 1000;
+      setSamples((prev) => [
+        ...prev.filter((sample) => sample.t >= cutoff),
+        { t: now, v: latest.current.v, i: latest.current.i },
+      ]);
+    }, SAMPLE_INTERVAL_MS);
 
-        const plot = {
-          left: 42,
-          right: Math.max(58, w - 42),
-          top: 16,
-          bottom: Math.max(40, h - 24),
-        };
-        const plotW = Math.max(1, plot.right - plot.left);
-        const plotH = Math.max(1, plot.bottom - plot.top);
-        const arr = samples.current;
-        const values = arr.length
-          ? arr
-          : [{ t: Date.now(), v: latest.current.v, i: latest.current.i }];
-        const vScale = niceScale(Math.max(...values.map((s) => s.v), latest.current.v));
-        const iScale = niceScale(Math.max(...values.map((s) => s.i), latest.current.i));
-        const t1 = Date.now();
-        const t0 = t1 - 60_000;
-        const xFor = (t: number) => plot.left + ((t - t0) / 60_000) * plotW;
-        const vYFor = (v: number) => plot.bottom - (v / vScale.max) * plotH;
-        const iYFor = (i: number) => plot.bottom - (i / iScale.max) * plotH;
-        const vColor = getCss("--voltage");
-        const iColor = getCss("--amp");
-        const axisColor = getCss("--muted-foreground");
+    return () => window.clearInterval(id);
+  }, [running, timeScaleSeconds]);
 
-        ctx.font = "10px JetBrains Mono, ui-monospace, monospace";
-        ctx.textBaseline = "middle";
+  const chartData = useMemo(() => {
+    const now = Date.now();
+    const cutoff = now - timeScaleSeconds * 1000;
+    const visible = samples.filter((sample) => sample.t >= cutoff);
 
-        ctx.strokeStyle = "rgba(255,255,255,0.06)";
-        ctx.lineWidth = 1;
-        for (let x = 0; x <= 6; x++) {
-          const gx = plot.left + (x * plotW) / 6;
-          ctx.beginPath();
-          ctx.moveTo(gx, plot.top);
-          ctx.lineTo(gx, plot.bottom);
-          ctx.stroke();
-        }
-        for (let y = 0; y <= 4; y++) {
-          const gy = plot.top + (y * plotH) / 4;
-          ctx.beginPath();
-          ctx.moveTo(plot.left, gy);
-          ctx.lineTo(plot.right, gy);
-          ctx.stroke();
-        }
+    if (visible.length > 0) return visible;
 
-        ctx.strokeStyle = "rgba(255,255,255,0.18)";
-        ctx.beginPath();
-        ctx.moveTo(plot.left, plot.top);
-        ctx.lineTo(plot.left, plot.bottom);
-        ctx.lineTo(plot.right, plot.bottom);
-        ctx.lineTo(plot.right, plot.top);
-        ctx.stroke();
+    return [{ t: now, v: latest.current.v, i: latest.current.i }];
+  }, [samples, timeScaleSeconds, voltage, current]);
 
-        ctx.fillStyle = axisColor;
-        ctx.textAlign = "center";
-        ctx.fillText("-60s", plot.left, h - 8);
-        ctx.fillText("-30s", plot.left + plotW / 2, h - 8);
-        ctx.fillText("now", plot.right, h - 8);
+  const xDomain = useMemo(() => {
+    const now = Date.now();
+    return [now - timeScaleSeconds * 1000, now] as [number, number];
+  }, [chartData, timeScaleSeconds]);
 
-        ctx.textAlign = "left";
-        ctx.fillStyle = vColor;
-        ctx.fillText("Voltage (V)", 4, 6);
-        for (let y = 0; y <= 4; y++) {
-          const value = vScale.max - y * vScale.step;
-          ctx.fillText(value.toFixed(2), 4, plot.top + (y * plotH) / 4);
-        }
-
-        ctx.textAlign = "right";
-        ctx.fillStyle = iColor;
-        ctx.fillText("Current (A)", w - 4, 6);
-        for (let y = 0; y <= 4; y++) {
-          const value = iScale.max - y * iScale.step;
-          ctx.fillText(value.toFixed(3), w - 4, plot.top + (y * plotH) / 4);
-        }
-
-        if (arr.length > 1) {
-          ctx.strokeStyle = vColor;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          arr.forEach((s, i) => {
-            const x = xFor(s.t);
-            const y = vYFor(s.v);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          });
-          ctx.stroke();
-
-          ctx.strokeStyle = iColor;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          arr.forEach((s, i) => {
-            const x = xFor(s.t);
-            const y = iYFor(s.i);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          });
-          ctx.stroke();
-        }
-
-        const vMarkerY = vYFor(latest.current.v);
-        const iMarkerY = iYFor(latest.current.i);
-        const markerOffset = Math.abs(vMarkerY - iMarkerY) < 14 ? 8 : 0;
-        drawValueMarker(
-          ctx,
-          plot.right,
-          vMarkerY - markerOffset,
-          vColor,
-          `${latest.current.v.toFixed(2)} V`,
-        );
-        drawValueMarker(
-          ctx,
-          plot.right,
-          iMarkerY + markerOffset,
-          iColor,
-          `${latest.current.i.toFixed(3)} A`,
-        );
-      }
-      raf = requestAnimationFrame(draw);
-    };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, []);
+  const voltageDomain = autoScale ? ([0, "auto"] as const) : ([0, manualVoltageMax] as const);
+  const currentDomain = autoScale ? ([0, "auto"] as const) : ([0, manualCurrentMax] as const);
 
   return (
-    <div className="relative h-40 w-full">
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
-      <div className="absolute left-12 top-1 flex gap-3 text-[10px] uppercase tracking-widest">
-        <span className="text-voltage">{voltage.toFixed(2)} V</span>
-        <span className="text-amp">{current.toFixed(3)} A</span>
+    <section className="rounded-md border border-border bg-background/40 p-3">
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          Time Scale
+          <div className="flex items-center gap-2">
+            <input
+              className="h-8 w-20 rounded-md border border-border bg-secondary px-2 text-xs font-mono text-foreground"
+              type="number"
+              min={5}
+              max={3600}
+              step={5}
+              value={timeScaleSeconds}
+              onChange={(event) =>
+                setTimeScaleSeconds(clamp(Number(event.target.value) || 60, 5, 3600))
+              }
+            />
+            <span className="text-xs font-mono text-muted-foreground">s</span>
+          </div>
+        </label>
+
+        <label className="flex h-8 items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={autoScale}
+            onChange={(event) => setAutoScale(event.target.checked)}
+          />
+          Auto Scale
+        </label>
+
+        {!autoScale && (
+          <>
+            <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              Voltage Max
+              <input
+                className="h-8 w-24 rounded-md border border-border bg-secondary px-2 text-xs font-mono text-foreground"
+                type="number"
+                min={0.01}
+                step={0.1}
+                value={manualVoltageMax}
+                onChange={(event) =>
+                  setManualVoltageMax(clamp(Number(event.target.value) || 30, 0.01, 999))
+                }
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              Current Max
+              <input
+                className="h-8 w-24 rounded-md border border-border bg-secondary px-2 text-xs font-mono text-foreground"
+                type="number"
+                min={0.001}
+                step={0.1}
+                value={manualCurrentMax}
+                onChange={(event) =>
+                  setManualCurrentMax(clamp(Number(event.target.value) || 5, 0.001, 999))
+                }
+              />
+            </label>
+          </>
+        )}
+
+        <div className="ml-auto flex gap-3 text-xs font-mono">
+          <span className="text-voltage">{voltage.toFixed(2)} V</span>
+          <span className="text-amp">{current.toFixed(3)} A</span>
+        </div>
       </div>
-    </div>
+
+      <div className="h-64 min-w-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={{ top: 10, right: 18, bottom: 16, left: 8 }}>
+            <CartesianGrid stroke="rgba(255,255,255,0.08)" />
+            <XAxis
+              dataKey="t"
+              type="number"
+              domain={xDomain}
+              tickFormatter={(value) => formatRelativeTime(Number(value), xDomain[1])}
+              stroke="var(--muted-foreground)"
+              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+              tickLine={{ stroke: "var(--border)" }}
+              axisLine={{ stroke: "var(--border)" }}
+              minTickGap={24}
+            />
+            <YAxis
+              yAxisId="voltage"
+              domain={voltageDomain}
+              tickFormatter={(value) => `${Number(value).toFixed(2)} V`}
+              stroke="var(--voltage)"
+              tick={{ fill: "var(--voltage)", fontSize: 11 }}
+              tickLine={{ stroke: "var(--border)" }}
+              axisLine={{ stroke: "var(--border)" }}
+              width={62}
+            />
+            <YAxis
+              yAxisId="current"
+              orientation="right"
+              domain={currentDomain}
+              tickFormatter={(value) => `${Number(value).toFixed(3)} A`}
+              stroke="var(--amp)"
+              tick={{ fill: "var(--amp)", fontSize: 11 }}
+              tickLine={{ stroke: "var(--border)" }}
+              axisLine={{ stroke: "var(--border)" }}
+              width={66}
+            />
+            <Tooltip
+              contentStyle={{
+                background: "var(--popover)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                color: "var(--popover-foreground)",
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+              }}
+              labelFormatter={(value) => new Date(Number(value)).toLocaleTimeString()}
+              formatter={(value, name) => [
+                name === "Voltage" ? `${Number(value).toFixed(2)} V` : `${Number(value).toFixed(3)} A`,
+                name,
+              ]}
+            />
+            <Legend wrapperStyle={{ fontSize: 11, fontFamily: "var(--font-mono)" }} />
+            <Line
+              yAxisId="voltage"
+              type="monotone"
+              dataKey="v"
+              name="Voltage"
+              stroke="var(--voltage)"
+              strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+            />
+            <Line
+              yAxisId="current"
+              type="monotone"
+              dataKey="i"
+              name="Current"
+              stroke="var(--amp)"
+              strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
   );
 }
 
-function niceScale(value: number) {
-  const rawMax = Math.max(value, 0.001);
-  const exponent = Math.floor(Math.log10(rawMax));
-  const magnitude = 10 ** exponent;
-  const normalized = rawMax / magnitude;
-  const niceNormalized =
-    normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-  const max = niceNormalized * magnitude;
-
-  return {
-    max,
-    step: max / 4,
-  };
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
-function drawValueMarker(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  color: string,
-  label: string,
-) {
-  const safeY = Math.min(Math.max(y, 16), ctx.canvas.clientHeight - 24);
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(x - 6, safeY);
-  ctx.lineTo(x, safeY);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(x, safeY, 3, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.font = "10px JetBrains Mono, ui-monospace, monospace";
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, x - 8, safeY);
-}
-
-function getCss(name: string) {
-  if (typeof window === "undefined") return "#fff";
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#fff";
+function formatRelativeTime(value: number, now: number) {
+  const seconds = Math.round((value - now) / 1000);
+  return seconds === 0 ? "now" : `${seconds}s`;
 }
