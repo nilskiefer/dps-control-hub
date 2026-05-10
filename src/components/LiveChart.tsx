@@ -15,6 +15,7 @@ interface Props {
   voltage: number;
   current: number;
   running: boolean;
+  readbackActive: boolean;
 }
 
 interface Sample {
@@ -29,7 +30,7 @@ const DEFAULT_WINDOW_MS = 60_000;
 const MIN_WINDOW_MS = 5_000;
 const MAX_WINDOW_MS = MAX_HISTORY_SECONDS * 1000;
 
-export function LiveChart({ voltage, current, running }: Props) {
+export function LiveChart({ voltage, current, running, readbackActive }: Props) {
   const latest = useRef({ v: voltage, i: current });
   const chartFrameRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef<{ x: number; domain: [number, number] } | null>(null);
@@ -50,7 +51,7 @@ export function LiveChart({ voltage, current, running }: Props) {
   }, [voltage, current]);
 
   useEffect(() => {
-    if (!running) return;
+    if (!running || !readbackActive) return;
 
     const id = window.setInterval(() => {
       const now = Date.now();
@@ -62,13 +63,13 @@ export function LiveChart({ voltage, current, running }: Props) {
     }, SAMPLE_INTERVAL_MS);
 
     return () => window.clearInterval(id);
-  }, [running]);
+  }, [running, readbackActive]);
 
   useEffect(() => {
-    if (!running) return;
+    if (!running || !readbackActive) return;
     const id = window.setInterval(() => setNow(Date.now()), SAMPLE_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, [running]);
+  }, [running, readbackActive]);
 
   useEffect(() => {
     const latest = samples.at(-1)?.t ?? now;
@@ -226,7 +227,9 @@ export function LiveChart({ voltage, current, running }: Props) {
     <section className="rounded-md border border-border bg-background/40 p-3">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap gap-3 text-xs font-mono">
-          <span className="text-muted-foreground">{formatWindowLabel(domain, followLive)}</span>
+          <span className={readbackActive ? "text-muted-foreground" : "text-destructive"}>
+            {readbackActive ? formatWindowLabel(domain, followLive) : "readback offline"}
+          </span>
           <span className="text-voltage">{voltage.toFixed(2)} V</span>
           <span className="text-amp">{current.toFixed(3)} A</span>
         </div>
@@ -287,7 +290,9 @@ export function LiveChart({ voltage, current, running }: Props) {
               "h-8 rounded-md border px-3 text-xs font-mono uppercase tracking-[0.14em] transition-colors",
               "inline-flex items-center gap-2",
               followLive
-                ? "border-destructive/60 bg-destructive/10 text-destructive"
+                ? readbackActive
+                  ? "border-destructive/60 bg-destructive/10 text-destructive"
+                  : "border-voltage/60 bg-voltage/10 text-voltage"
                 : "border-border bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground",
             )}
           >
@@ -295,18 +300,23 @@ export function LiveChart({ voltage, current, running }: Props) {
               className={cn(
                 "size-2.5 rounded-full",
                 followLive
-                  ? "bg-destructive shadow-[0_0_12px_var(--destructive)]"
+                  ? readbackActive
+                    ? "bg-destructive shadow-[0_0_12px_var(--destructive)]"
+                    : "bg-voltage shadow-[0_0_12px_var(--voltage)]"
                   : "bg-muted-foreground/50",
               )}
             />
-            Live
+            {readbackActive ? "Live" : "Estimate"}
           </button>
         </div>
       </div>
 
       <div
         ref={chartFrameRef}
-        className="h-64 min-w-0 cursor-grab touch-none active:cursor-grabbing"
+        className={cn(
+          "relative h-64 min-w-0 cursor-grab touch-none active:cursor-grabbing",
+          !readbackActive && "rounded-md outline outline-1 outline-voltage/40",
+        )}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -387,6 +397,14 @@ export function LiveChart({ voltage, current, running }: Props) {
             />
           </LineChart>
         </ResponsiveContainer>
+        {!readbackActive && (
+          <div className="pointer-events-none absolute right-3 top-3 max-w-[20rem] rounded-md border border-voltage/50 bg-background/90 px-3 py-2 text-xs text-voltage shadow-lg">
+            <div className="font-mono uppercase tracking-[0.16em]">Estimate mode</div>
+            <div className="mt-1 text-muted-foreground">
+              Readback is offline. The graph is not receiving live telemetry.
+            </div>
+          </div>
+        )}
       </div>
       <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-3">
         <div

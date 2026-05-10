@@ -201,6 +201,7 @@ export default function App() {
               voltage={state.outputVoltage}
               current={state.outputCurrent}
               running={connected}
+              readbackActive={readbackActive}
             />
           </div>
 
