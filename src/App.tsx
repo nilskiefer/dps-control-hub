@@ -198,8 +198,8 @@ export default function App() {
 
           <div className="mt-5">
             <LiveChart
-              voltage={state.outputVoltage}
-              current={state.outputCurrent}
+              voltage={readbackActive ? state.outputVoltage : state.setVoltage}
+              current={readbackActive ? state.outputCurrent : state.setCurrent}
               running={connected}
               readbackActive={readbackActive}
             />
