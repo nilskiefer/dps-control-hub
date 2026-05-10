@@ -34,7 +34,12 @@ export function LiveChart({ voltage, current, running, readbackActive }: Props) 
   const latest = useRef({ v: voltage, i: current });
   const chartFrameRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef<{ x: number; domain: [number, number] } | null>(null);
-  const scrollPanRef = useRef<{ x: number; start: number; trackWidth: number } | null>(null);
+  const scrollPanRef = useRef<{
+    mode: "move" | "left" | "right";
+    x: number;
+    domain: [number, number];
+    trackWidth: number;
+  } | null>(null);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [autoScale, setAutoScale] = useState(true);
   const [manualVoltageMax, setManualVoltageMax] = useState(30);
@@ -88,6 +93,10 @@ export function LiveChart({ voltage, current, running, readbackActive }: Props) 
   }, [samples, voltage, current, domain]);
   const visibleSamples = useMemo(
     () => chartSamples.filter((sample) => sample.t >= domain[0] && sample.t <= domain[1]),
+    [chartSamples, domain],
+  );
+  const renderedSamples = useMemo(
+    () => includeEdgeSamples(chartSamples, domain),
     [chartSamples, domain],
   );
   const scrollBounds = useMemo(() => {
@@ -185,6 +194,12 @@ export function LiveChart({ voltage, current, running, readbackActive }: Props) 
     setFollowLive(next[1] >= scrollBounds.latest - SAMPLE_INTERVAL_MS);
   };
 
+  const setScrollbarDomain = (next: [number, number]) => {
+    const clamped = clampDomain(next, scrollBounds.earliest, scrollBounds.latest);
+    setDomain(clamped);
+    setFollowLive(clamped[1] >= scrollBounds.latest - SAMPLE_INTERVAL_MS);
+  };
+
   const handleScrollbarTrackDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -192,15 +207,19 @@ export function LiveChart({ voltage, current, running, readbackActive }: Props) 
     setScrollbarStart(scrollBounds.earliest + ratio * scrollBounds.total - scrollBounds.width / 2);
   };
 
-  const handleScrollbarThumbDown = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handleScrollbarThumbDown = (
+    mode: "move" | "left" | "right",
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
     event.preventDefault();
     event.stopPropagation();
     const track = event.currentTarget.parentElement;
     if (!track) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     scrollPanRef.current = {
+      mode,
       x: event.clientX,
-      start: domain[0],
+      domain,
       trackWidth: track.getBoundingClientRect().width,
     };
   };
@@ -211,7 +230,18 @@ export function LiveChart({ voltage, current, running, readbackActive }: Props) 
       ((event.clientX - scrollPanRef.current.x) /
         Math.max(1, scrollPanRef.current.trackWidth)) *
       scrollBounds.total;
-    setScrollbarStart(scrollPanRef.current.start + delta);
+
+    if (scrollPanRef.current.mode === "move") {
+      setScrollbarStart(scrollPanRef.current.domain[0] + delta);
+      return;
+    }
+
+    if (scrollPanRef.current.mode === "left") {
+      setScrollbarDomain([scrollPanRef.current.domain[0] + delta, scrollPanRef.current.domain[1]]);
+      return;
+    }
+
+    setScrollbarDomain([scrollPanRef.current.domain[0], scrollPanRef.current.domain[1] + delta]);
   };
 
   const handleScrollbarThumbUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -318,7 +348,7 @@ export function LiveChart({ voltage, current, running, readbackActive }: Props) 
         onPointerCancel={handlePointerUp}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={visibleSamples} margin={{ top: 10, right: 18, bottom: 16, left: 8 }}>
+          <LineChart data={renderedSamples} margin={{ top: 10, right: 18, bottom: 16, left: 8 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.08)" />
             <XAxis
               dataKey="t"
@@ -404,11 +434,20 @@ export function LiveChart({ voltage, current, running, readbackActive }: Props) 
           <div
             className="absolute top-1/2 h-4 -translate-y-1/2 cursor-grab rounded-full border border-primary/70 bg-primary/30 shadow-[0_0_18px_-8px_var(--primary)] active:cursor-grabbing"
             style={{ left: `${thumbLeftPct}%`, width: `${thumbWidthPct}%` }}
-            onPointerDown={handleScrollbarThumbDown}
+            onPointerDown={(event) => handleScrollbarThumbDown("move", event)}
             onPointerMove={handleScrollbarThumbMove}
             onPointerUp={handleScrollbarThumbUp}
             onPointerCancel={handleScrollbarThumbUp}
-          />
+          >
+            <span
+              className="absolute -left-1 top-0 h-full w-3 cursor-ew-resize rounded-l-full border-l-2 border-primary bg-primary/50"
+              onPointerDown={(event) => handleScrollbarThumbDown("left", event)}
+            />
+            <span
+              className="absolute -right-1 top-0 h-full w-3 cursor-ew-resize rounded-r-full border-r-2 border-primary bg-primary/50"
+              onPointerDown={(event) => handleScrollbarThumbDown("right", event)}
+            />
+          </div>
         </div>
       </div>
       <div className="mt-2 flex justify-between text-[10px] font-mono text-muted-foreground">
@@ -434,6 +473,21 @@ function clampDomain(domain: [number, number], earliest: number, latest: number)
   if (latest - earliest <= width) return [latest - width, latest];
   const start = clamp(domain[0], earliest, latest - width);
   return [start, start + width];
+}
+
+function includeEdgeSamples(samples: Sample[], domain: [number, number]) {
+  if (samples.length <= 2) return samples;
+
+  const firstVisibleIndex = samples.findIndex((sample) => sample.t >= domain[0]);
+  if (firstVisibleIndex === -1) return samples.slice(-2);
+
+  let lastVisibleIndex = firstVisibleIndex;
+  for (let index = firstVisibleIndex; index < samples.length; index++) {
+    if (samples[index].t > domain[1]) break;
+    lastVisibleIndex = index;
+  }
+
+  return samples.slice(Math.max(0, firstVisibleIndex - 1), Math.min(samples.length, lastVisibleIndex + 2));
 }
 
 function formatWindowLabel(domain: [number, number], live: boolean) {
