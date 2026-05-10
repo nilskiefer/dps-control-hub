@@ -10,7 +10,6 @@ import {
   YAxis,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { Slider } from "@/components/ui/slider";
 
 interface Props {
   voltage: number;
@@ -26,17 +25,23 @@ interface Sample {
 
 const SAMPLE_INTERVAL_MS = 250;
 const MAX_HISTORY_SECONDS = 6 * 60 * 60;
-const DEFAULT_WINDOW_SAMPLES = 240;
+const DEFAULT_WINDOW_MS = 60_000;
+const MIN_WINDOW_MS = 5_000;
+const MAX_WINDOW_MS = MAX_HISTORY_SECONDS * 1000;
 
 export function LiveChart({ voltage, current, running }: Props) {
   const latest = useRef({ v: voltage, i: current });
+  const panRef = useRef<{ x: number; domain: [number, number] } | null>(null);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [autoScale, setAutoScale] = useState(true);
   const [manualVoltageMax, setManualVoltageMax] = useState(30);
   const [manualCurrentMax, setManualCurrentMax] = useState(5);
   const [followLive, setFollowLive] = useState(true);
-  const [windowSamples, setWindowSamples] = useState(DEFAULT_WINDOW_SAMPLES);
-  const [range, setRange] = useState<[number, number]>([0, 0]);
+  const [now, setNow] = useState(Date.now());
+  const [domain, setDomain] = useState<[number, number]>(() => {
+    const now = Date.now();
+    return [now - DEFAULT_WINDOW_MS, now];
+  });
 
   useEffect(() => {
     latest.current = { v: voltage, i: current };
@@ -57,55 +62,97 @@ export function LiveChart({ voltage, current, running }: Props) {
     return () => window.clearInterval(id);
   }, [running]);
 
+  useEffect(() => {
+    if (!running) return;
+    const id = window.setInterval(() => setNow(Date.now()), 50);
+    return () => window.clearInterval(id);
+  }, [running]);
+
+  useEffect(() => {
+    const latest = samples.at(-1)?.t ?? now;
+    setDomain(([start, end]) => {
+      const width = end - start;
+      if (followLive) return [latest - width, latest];
+      const earliest = samples[0]?.t ?? latest - MAX_WINDOW_MS;
+      return clampDomain([start, end], earliest, latest);
+    });
+  }, [samples, now, followLive]);
+
   const chartSamples = useMemo(() => {
     if (samples.length > 0) return samples;
 
-    return [{ t: Date.now(), v: latest.current.v, i: latest.current.i }];
-  }, [samples, voltage, current]);
-
-  useEffect(() => {
-    const latestIndex = chartSamples.length - 1;
-    if (latestIndex < 0) return;
-
-    if (followLive) {
-      const startIndex = Math.max(0, latestIndex - windowSamples + 1);
-      setRange([startIndex, latestIndex]);
-      return;
-    }
-
-    setRange(([start, end]) => [
-      clamp(start, 0, latestIndex),
-      clamp(end, Math.min(start, latestIndex), latestIndex),
-    ]);
-  }, [chartSamples.length, followLive, windowSamples]);
-
+    return [{ t: domain[1], v: latest.current.v, i: latest.current.i }];
+  }, [samples, voltage, current, domain]);
   const visibleSamples = useMemo(
-    () => chartSamples.slice(range[0], range[1] + 1),
-    [chartSamples, range],
-  );
-  const xDomain = useMemo(
-    () => [
-      chartSamples[range[0]]?.t ?? chartSamples[0].t,
-      chartSamples[range[1]]?.t ?? chartSamples.at(-1)!.t,
-    ],
-    [chartSamples, range],
+    () => chartSamples.filter((sample) => sample.t >= domain[0] && sample.t <= domain[1]),
+    [chartSamples, domain],
   );
   const voltageDomain = autoScale ? ([0, "auto"] as const) : ([0, manualVoltageMax] as const);
   const currentDomain = autoScale ? ([0, "auto"] as const) : ([0, manualCurrentMax] as const);
 
-  const handleRangeChange = (next: number[]) => {
-    const latestIndex = chartSamples.length - 1;
-    const startIndex = clamp(next[0] ?? 0, 0, latestIndex);
-    const endIndex = clamp(next[1] ?? latestIndex, startIndex, latestIndex);
-    setRange([startIndex, endIndex]);
-    setWindowSamples(Math.max(1, endIndex - startIndex + 1));
-    setFollowLive(endIndex === latestIndex);
+  const panBy = (deltaMs: number) => {
+    const earliest = samples[0]?.t ?? domain[0];
+    const latest = samples.at(-1)?.t ?? domain[1];
+    const next = clampDomain([domain[0] + deltaMs, domain[1] + deltaMs], earliest, latest);
+    setDomain(next);
+    setFollowLive(next[1] >= latest - SAMPLE_INTERVAL_MS);
+  };
+
+  const zoomBy = (factor: number, anchorRatio = 0.5) => {
+    const earliest = samples[0]?.t ?? domain[0];
+    const latest = samples.at(-1)?.t ?? domain[1];
+    const width = clamp((domain[1] - domain[0]) * factor, MIN_WINDOW_MS, MAX_WINDOW_MS);
+    const anchor = domain[0] + (domain[1] - domain[0]) * anchorRatio;
+    const next: [number, number] = [anchor - width * anchorRatio, anchor + width * (1 - anchorRatio)];
+    const clamped = clampDomain(next, earliest, latest);
+    setDomain(clamped);
+    setFollowLive(clamped[1] >= latest - SAMPLE_INTERVAL_MS);
+  };
+
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const anchorRatio = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+
+    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+      zoomBy(event.deltaY > 0 ? 1.18 : 0.84, anchorRatio);
+      return;
+    }
+
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    panBy((delta / Math.max(1, rect.width)) * (domain[1] - domain[0]));
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    panRef.current = { x: event.clientX, domain };
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!panRef.current) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const deltaMs = ((panRef.current.x - event.clientX) / Math.max(1, rect.width)) * (panRef.current.domain[1] - panRef.current.domain[0]);
+    const earliest = samples[0]?.t ?? panRef.current.domain[0];
+    const latest = samples.at(-1)?.t ?? panRef.current.domain[1];
+    const next = clampDomain(
+      [panRef.current.domain[0] + deltaMs, panRef.current.domain[1] + deltaMs],
+      earliest,
+      latest,
+    );
+    setDomain(next);
+    setFollowLive(next[1] >= latest - SAMPLE_INTERVAL_MS);
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    panRef.current = null;
   };
 
   const jumpLive = () => {
-    const latestIndex = chartSamples.length - 1;
-    const startIndex = Math.max(0, latestIndex - windowSamples + 1);
-    setRange([startIndex, latestIndex]);
+    const latest = samples.at(-1)?.t ?? domain[1];
+    const width = domain[1] - domain[0];
+    setDomain([latest - width, latest]);
     setFollowLive(true);
   };
 
@@ -113,7 +160,7 @@ export function LiveChart({ voltage, current, running }: Props) {
     <section className="rounded-md border border-border bg-background/40 p-3">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap gap-3 text-xs font-mono">
-          <span className="text-muted-foreground">{formatWindowLabel(visibleSamples, followLive)}</span>
+          <span className="text-muted-foreground">{formatWindowLabel(domain, followLive)}</span>
           <span className="text-voltage">{voltage.toFixed(2)} V</span>
           <span className="text-amp">{current.toFixed(3)} A</span>
         </div>
@@ -162,7 +209,7 @@ export function LiveChart({ voltage, current, running }: Props) {
           <button
             type="button"
             className="h-8 rounded-md border border-border bg-secondary px-3 text-xs font-mono text-foreground transition-colors hover:bg-accent disabled:opacity-50"
-            onClick={() => exportVisibleJson(visibleSamples)}
+            onClick={() => exportVisibleJson(visibleSamples, domain)}
             disabled={visibleSamples.length === 0}
           >
             Export Visible JSON
@@ -191,15 +238,22 @@ export function LiveChart({ voltage, current, running }: Props) {
         </div>
       </div>
 
-      <div className="h-64 min-w-0">
+      <div
+        className="h-64 min-w-0 cursor-grab touch-none active:cursor-grabbing"
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={visibleSamples} margin={{ top: 10, right: 18, bottom: 16, left: 8 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.08)" />
             <XAxis
               dataKey="t"
               type="number"
-              domain={xDomain}
-              tickFormatter={(value) => formatRelativeTime(Number(value), xDomain[1])}
+              domain={domain}
+              tickFormatter={(value) => formatRelativeTime(Number(value), domain[1])}
               stroke="var(--muted-foreground)"
               tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               tickLine={{ stroke: "var(--border)" }}
@@ -272,23 +326,10 @@ export function LiveChart({ voltage, current, running }: Props) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-
-      <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-3">
-        <Slider
-          min={0}
-          max={Math.max(0, chartSamples.length - 1)}
-          step={1}
-          minStepsBetweenThumbs={1}
-          value={range}
-          disabled={chartSamples.length < 2}
-          onValueChange={handleRangeChange}
-          className="h-6"
-        />
-        <div className="mt-1 flex justify-between text-[10px] font-mono text-muted-foreground">
-          <span>{new Date(chartSamples[0].t).toLocaleTimeString()}</span>
-          <span>{formatDuration(visibleSamples)}</span>
-          <span>{followLive ? "live" : new Date(chartSamples.at(-1)!.t).toLocaleTimeString()}</span>
-        </div>
+      <div className="mt-2 flex justify-between text-[10px] font-mono text-muted-foreground">
+        <span>Drag or scroll to pan</span>
+        <span>{formatDuration(domain)}</span>
+        <span>Shift/ctrl scroll to zoom</span>
       </div>
     </section>
   );
@@ -303,30 +344,34 @@ function formatRelativeTime(value: number, end: number) {
   return seconds === 0 ? "now" : `${seconds}s`;
 }
 
-function formatWindowLabel(samples: Sample[], live: boolean) {
-  if (samples.length === 0) return "No samples";
+function clampDomain(domain: [number, number], earliest: number, latest: number): [number, number] {
+  const width = clamp(domain[1] - domain[0], MIN_WINDOW_MS, MAX_WINDOW_MS);
+  if (latest - earliest <= width) return [latest - width, latest];
+  const start = clamp(domain[0], earliest, latest - width);
+  return [start, start + width];
+}
 
-  const start = new Date(samples[0].t).toLocaleTimeString();
-  const end = new Date(samples.at(-1)!.t).toLocaleTimeString();
+function formatWindowLabel(domain: [number, number], live: boolean) {
+  const start = new Date(domain[0]).toLocaleTimeString();
+  const end = new Date(domain[1]).toLocaleTimeString();
   return live ? `${start} - live` : `${start} - ${end}`;
 }
 
-function formatDuration(samples: Sample[]) {
-  if (samples.length < 2) return "0s";
-  const seconds = Math.max(0, Math.round((samples.at(-1)!.t - samples[0].t) / 1000));
+function formatDuration(domain: [number, number]) {
+  const seconds = Math.max(0, Math.round((domain[1] - domain[0]) / 1000));
   if (seconds < 60) return `${seconds}s visible`;
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m visible`;
   return `${Math.round(minutes / 60)}h visible`;
 }
 
-function exportVisibleJson(samples: Sample[]) {
+function exportVisibleJson(samples: Sample[], domain: [number, number]) {
   const body = JSON.stringify(
     {
       visibleWindow: {
-        start: samples[0] ? new Date(samples[0].t).toISOString() : null,
-        end: samples.at(-1) ? new Date(samples.at(-1)!.t).toISOString() : null,
-        durationMs: samples.length > 1 ? samples.at(-1)!.t - samples[0].t : 0,
+        start: new Date(domain[0]).toISOString(),
+        end: new Date(domain[1]).toISOString(),
+        durationMs: domain[1] - domain[0],
       },
       samples: samples.map((sample) => ({
         timestamp: new Date(sample.t).toISOString(),
