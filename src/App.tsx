@@ -65,8 +65,13 @@ export default function App() {
               <span className="port port-neg" aria-hidden />
             </div>
             <div>
-              <h1 className="text-lg font-semibold tracking-tight">
-                DPS-150 <span className="text-muted-foreground font-normal">Web Console</span>
+              <h1 className="flex flex-wrap items-baseline gap-x-2 text-lg font-semibold tracking-tight">
+                <span>
+                  DPS-150 <span className="text-muted-foreground font-normal">Web Console</span>
+                </span>
+                <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                  vibe coded by Nils Kiefer
+                </span>
               </h1>
               <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
                 <span>

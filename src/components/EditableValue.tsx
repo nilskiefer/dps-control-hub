@@ -29,6 +29,7 @@ export function EditableValue({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const displayValue = useAnimatedNumber(value, !editing);
 
   useEffect(() => {
     if (editing) {
@@ -98,11 +99,44 @@ export function EditableValue({
           />
         ) : (
           <span className={cn("font-digits text-3xl font-bold", accentClass)}>
-            {value.toFixed(decimals)}
+            {displayValue.toFixed(decimals)}
           </span>
         )}
         <span className="font-digits text-base text-muted-foreground">{unit}</span>
       </button>
     </div>
   );
+}
+
+function useAnimatedNumber(value: number, active: boolean) {
+  const [displayValue, setDisplayValue] = useState(value);
+  const previousValue = useRef(value);
+
+  useEffect(() => {
+    if (!active) {
+      previousValue.current = value;
+      setDisplayValue(value);
+      return;
+    }
+
+    const from = previousValue.current;
+    const to = value;
+    const startedAt = performance.now();
+    const durationMs = 220;
+    let raf = 0;
+
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / durationMs);
+      const eased = 1 - (1 - progress) ** 3;
+      setDisplayValue(from + (to - from) * eased);
+      if (progress < 1) raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    previousValue.current = value;
+
+    return () => cancelAnimationFrame(raf);
+  }, [active, value]);
+
+  return displayValue;
 }

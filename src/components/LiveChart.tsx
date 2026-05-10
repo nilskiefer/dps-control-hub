@@ -31,6 +31,7 @@ export function LiveChart({ voltage, current, running }: Props) {
   const [autoScale, setAutoScale] = useState(true);
   const [manualVoltageMax, setManualVoltageMax] = useState(30);
   const [manualCurrentMax, setManualCurrentMax] = useState(5);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     latest.current = { v: voltage, i: current };
@@ -54,20 +55,24 @@ export function LiveChart({ voltage, current, running }: Props) {
     return () => window.clearInterval(id);
   }, [running, timeScaleSeconds]);
 
+  useEffect(() => {
+    if (!running) return;
+    const id = window.setInterval(() => setNow(Date.now()), 50);
+    return () => window.clearInterval(id);
+  }, [running]);
+
   const chartData = useMemo(() => {
-    const now = Date.now();
     const cutoff = now - timeScaleSeconds * 1000;
     const visible = samples.filter((sample) => sample.t >= cutoff);
 
     if (visible.length > 0) return visible;
 
     return [{ t: now, v: latest.current.v, i: latest.current.i }];
-  }, [samples, timeScaleSeconds, voltage, current]);
+  }, [samples, timeScaleSeconds, voltage, current, now]);
 
   const xDomain = useMemo(() => {
-    const now = Date.now();
     return [now - timeScaleSeconds * 1000, now] as [number, number];
-  }, [chartData, timeScaleSeconds]);
+  }, [now, timeScaleSeconds]);
 
   const voltageDomain = autoScale ? ([0, "auto"] as const) : ([0, manualVoltageMax] as const);
   const currentDomain = autoScale ? ([0, "auto"] as const) : ([0, manualCurrentMax] as const);
@@ -137,6 +142,25 @@ export function LiveChart({ voltage, current, running }: Props) {
           <span className="text-voltage">{voltage.toFixed(2)} V</span>
           <span className="text-amp">{current.toFixed(3)} A</span>
         </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="h-8 rounded-md border border-border bg-secondary px-3 text-xs font-mono text-foreground transition-colors hover:bg-accent"
+            onClick={() => exportSamples(chartData, "json")}
+            disabled={chartData.length === 0}
+          >
+            Export JSON
+          </button>
+          <button
+            type="button"
+            className="h-8 rounded-md border border-border bg-secondary px-3 text-xs font-mono text-foreground transition-colors hover:bg-accent"
+            onClick={() => exportSamples(chartData, "csv")}
+            disabled={chartData.length === 0}
+          >
+            Export CSV
+          </button>
+        </div>
       </div>
 
       <div className="h-64 min-w-0">
@@ -199,7 +223,9 @@ export function LiveChart({ voltage, current, running }: Props) {
               stroke="var(--voltage)"
               strokeWidth={2}
               dot={false}
-              isAnimationActive={false}
+              isAnimationActive
+              animationDuration={220}
+              animationEasing="ease-out"
             />
             <Line
               yAxisId="current"
@@ -209,7 +235,9 @@ export function LiveChart({ voltage, current, running }: Props) {
               stroke="var(--amp)"
               strokeWidth={2}
               dot={false}
-              isAnimationActive={false}
+              isAnimationActive
+              animationDuration={220}
+              animationEasing="ease-out"
             />
           </LineChart>
         </ResponsiveContainer>
@@ -225,4 +253,31 @@ function clamp(value: number, min: number, max: number) {
 function formatRelativeTime(value: number, now: number) {
   const seconds = Math.round((value - now) / 1000);
   return seconds === 0 ? "now" : `${seconds}s`;
+}
+
+function exportSamples(samples: Sample[], format: "json" | "csv") {
+  const rows = samples.map((sample) => ({
+    timestamp: new Date(sample.t).toISOString(),
+    timeMs: sample.t,
+    voltage: Number(sample.v.toFixed(4)),
+    current: Number(sample.i.toFixed(5)),
+  }));
+  const body =
+    format === "json"
+      ? JSON.stringify(rows, null, 2)
+      : [
+          "timestamp,timeMs,voltage,current",
+          ...rows.map((row) => `${row.timestamp},${row.timeMs},${row.voltage},${row.current}`),
+        ].join("\n");
+  const blob = new Blob([body], {
+    type: format === "json" ? "application/json" : "text/csv",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `dps150-graph-${new Date().toISOString().replace(/[:.]/g, "-")}.${format}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
