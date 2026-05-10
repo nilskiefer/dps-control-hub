@@ -64,7 +64,7 @@ export function LiveChart({ voltage, current, running }: Props) {
 
   useEffect(() => {
     if (!running) return;
-    const id = window.setInterval(() => setNow(Date.now()), 50);
+    const id = window.setInterval(() => setNow(Date.now()), SAMPLE_INTERVAL_MS);
     return () => window.clearInterval(id);
   }, [running]);
 
@@ -87,6 +87,15 @@ export function LiveChart({ voltage, current, running }: Props) {
     () => chartSamples.filter((sample) => sample.t >= domain[0] && sample.t <= domain[1]),
     [chartSamples, domain],
   );
+  const scrollBounds = useMemo(() => {
+    const earliest = samples[0]?.t ?? domain[0];
+    const latest = samples.at(-1)?.t ?? domain[1];
+    const width = domain[1] - domain[0];
+    const max = Math.max(0, latest - earliest - width);
+    const value = clamp(domain[0] - earliest, 0, max);
+
+    return { earliest, latest, max, value };
+  }, [samples, domain]);
   const voltageDomain = autoScale ? ([0, "auto"] as const) : ([0, manualVoltageMax] as const);
   const currentDomain = autoScale ? ([0, "auto"] as const) : ([0, manualCurrentMax] as const);
 
@@ -154,6 +163,14 @@ export function LiveChart({ voltage, current, running }: Props) {
     const width = domain[1] - domain[0];
     setDomain([latest - width, latest]);
     setFollowLive(true);
+  };
+
+  const handleScrollbarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const width = domain[1] - domain[0];
+    const start = scrollBounds.earliest + Number(event.target.value);
+    const next: [number, number] = [start, start + width];
+    setDomain(next);
+    setFollowLive(next[1] >= scrollBounds.latest - SAMPLE_INTERVAL_MS);
   };
 
   return (
@@ -307,9 +324,7 @@ export function LiveChart({ voltage, current, running }: Props) {
               stroke="var(--voltage)"
               strokeWidth={2}
               dot={false}
-              isAnimationActive
-              animationDuration={220}
-              animationEasing="ease-out"
+              isAnimationActive={false}
             />
             <Line
               yAxisId="current"
@@ -319,12 +334,22 @@ export function LiveChart({ voltage, current, running }: Props) {
               stroke="var(--amp)"
               strokeWidth={2}
               dot={false}
-              isAnimationActive
-              animationDuration={220}
-              animationEasing="ease-out"
+              isAnimationActive={false}
             />
           </LineChart>
         </ResponsiveContainer>
+      </div>
+      <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-2">
+        <input
+          className="h-5 w-full accent-primary"
+          type="range"
+          min={0}
+          max={scrollBounds.max}
+          step={SAMPLE_INTERVAL_MS}
+          value={scrollBounds.value}
+          disabled={scrollBounds.max === 0}
+          onChange={handleScrollbarChange}
+        />
       </div>
       <div className="mt-2 flex justify-between text-[10px] font-mono text-muted-foreground">
         <span>Drag or scroll to pan</span>
