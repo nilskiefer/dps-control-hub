@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Brush,
   CartesianGrid,
   Legend,
   Line,
@@ -23,22 +24,25 @@ interface Sample {
   i: number;
 }
 
+interface BrushWindow {
+  startIndex: number;
+  endIndex: number;
+}
+
 const SAMPLE_INTERVAL_MS = 250;
 const MAX_HISTORY_SECONDS = 6 * 60 * 60;
-const MIN_WINDOW_MS = 5_000;
-const DEFAULT_WINDOW_MS = 60_000;
+const DEFAULT_WINDOW_SAMPLES = 240;
 
 export function LiveChart({ voltage, current, running }: Props) {
   const latest = useRef({ v: voltage, i: current });
-  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const programmaticBrushUpdate = useRef(false);
   const [samples, setSamples] = useState<Sample[]>([]);
-  const [windowMs, setWindowMs] = useState(DEFAULT_WINDOW_MS);
   const [autoScale, setAutoScale] = useState(true);
   const [manualVoltageMax, setManualVoltageMax] = useState(30);
   const [manualCurrentMax, setManualCurrentMax] = useState(5);
-  const [now, setNow] = useState(Date.now());
   const [followLive, setFollowLive] = useState(true);
-  const [viewOffsetMs, setViewOffsetMs] = useState(0);
+  const [windowSamples, setWindowSamples] = useState(DEFAULT_WINDOW_SAMPLES);
+  const [brushWindow, setBrushWindow] = useState<BrushWindow>({ startIndex: 0, endIndex: 0 });
 
   useEffect(() => {
     latest.current = { v: voltage, i: current };
@@ -59,112 +63,74 @@ export function LiveChart({ voltage, current, running }: Props) {
     return () => window.clearInterval(id);
   }, [running]);
 
-  useEffect(() => {
-    if (!running) return;
-    const id = window.setInterval(() => setNow(Date.now()), 50);
-    return () => window.clearInterval(id);
-  }, [running]);
+  const chartSamples = useMemo(() => {
+    if (samples.length > 0) return samples;
 
-  const historyBounds = useMemo(() => {
-    const end = running ? now : (samples.at(-1)?.t ?? now);
-    const start = samples[0]?.t ?? end - windowMs;
-    const span = Math.max(end - start, windowMs);
-    const maxOffset = Math.max(0, span - windowMs);
-
-    return { start, end, span, maxOffset };
-  }, [samples, windowMs, now, running]);
+    return [{ t: Date.now(), v: latest.current.v, i: latest.current.i }];
+  }, [samples, voltage, current]);
 
   useEffect(() => {
+    const latestIndex = chartSamples.length - 1;
+    if (latestIndex < 0) return;
+
     if (followLive) {
-      setViewOffsetMs(historyBounds.maxOffset);
+      const startIndex = Math.max(0, latestIndex - windowSamples + 1);
+      programmaticBrushUpdate.current = true;
+      setBrushWindow({ startIndex, endIndex: latestIndex });
       return;
     }
 
-    setViewOffsetMs((value) => Math.min(value, historyBounds.maxOffset));
-  }, [followLive, historyBounds.maxOffset]);
+    setBrushWindow((current) => ({
+      startIndex: clamp(current.startIndex, 0, latestIndex),
+      endIndex: clamp(current.endIndex, 0, latestIndex),
+    }));
+  }, [chartSamples.length, followLive, windowSamples]);
 
-  const xDomain = useMemo(() => {
-    const start = historyBounds.start + viewOffsetMs;
-    return [start, start + windowMs] as [number, number];
-  }, [historyBounds.start, viewOffsetMs, windowMs]);
-
-  const chartData = useMemo(() => {
-    const visible = samples.filter((sample) => sample.t >= xDomain[0] && sample.t <= xDomain[1]);
-
-    if (visible.length > 0) return visible;
-
-    return [{ t: xDomain[1], v: latest.current.v, i: latest.current.i }];
-  }, [samples, xDomain, voltage, current]);
-
+  const visibleSamples = useMemo(
+    () => chartSamples.slice(brushWindow.startIndex, brushWindow.endIndex + 1),
+    [chartSamples, brushWindow],
+  );
+  const xDomain = useMemo(
+    () => [
+      chartSamples[brushWindow.startIndex]?.t ?? chartSamples[0].t,
+      chartSamples[brushWindow.endIndex]?.t ?? chartSamples.at(-1)!.t,
+    ],
+    [chartSamples, brushWindow],
+  );
   const voltageDomain = autoScale ? ([0, "auto"] as const) : ([0, manualVoltageMax] as const);
   const currentDomain = autoScale ? ([0, "auto"] as const) : ([0, manualCurrentMax] as const);
-  const selectionLeft = (viewOffsetMs / historyBounds.span) * 100;
-  const selectionWidth = (windowMs / historyBounds.span) * 100;
+
+  const handleBrushChange = (next: { startIndex?: number; endIndex?: number }) => {
+    if (next.startIndex == null || next.endIndex == null) return;
+
+    const latestIndex = chartSamples.length - 1;
+    const startIndex = clamp(next.startIndex, 0, latestIndex);
+    const endIndex = clamp(next.endIndex, startIndex, latestIndex);
+
+    setBrushWindow({ startIndex, endIndex });
+    setWindowSamples(Math.max(1, endIndex - startIndex + 1));
+
+    if (programmaticBrushUpdate.current) {
+      programmaticBrushUpdate.current = false;
+      return;
+    }
+
+    setFollowLive(endIndex === latestIndex);
+  };
 
   const jumpLive = () => {
+    const latestIndex = chartSamples.length - 1;
+    const startIndex = Math.max(0, latestIndex - windowSamples + 1);
+    programmaticBrushUpdate.current = true;
+    setBrushWindow({ startIndex, endIndex: latestIndex });
     setFollowLive(true);
-    setViewOffsetMs(historyBounds.maxOffset);
-  };
-
-  const dragTimeline = (mode: "left" | "right" | "move", event: React.PointerEvent) => {
-    const rect = timelineRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    setFollowLive(false);
-
-    const startX = event.clientX;
-    const startOffset = viewOffsetMs;
-    const startWindow = windowMs;
-    const historySpan = historyBounds.span;
-
-    const onMove = (moveEvent: PointerEvent) => {
-      const deltaMs = ((moveEvent.clientX - startX) / rect.width) * historySpan;
-
-      if (mode === "move") {
-        setViewOffsetMs(clamp(startOffset + deltaMs, 0, Math.max(0, historySpan - startWindow)));
-        return;
-      }
-
-      if (mode === "left") {
-        const fixedEnd = startOffset + startWindow;
-        const nextOffset = clamp(startOffset + deltaMs, 0, fixedEnd - MIN_WINDOW_MS);
-        setViewOffsetMs(nextOffset);
-        setWindowMs(clamp(fixedEnd - nextOffset, MIN_WINDOW_MS, historySpan - nextOffset));
-        return;
-      }
-
-      const nextWindow = clamp(startWindow + deltaMs, MIN_WINDOW_MS, historySpan - startOffset);
-      setWindowMs(nextWindow);
-    };
-
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp, { once: true });
-  };
-
-  const jumpTimeline = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget) return;
-
-    const rect = timelineRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const ratio = clamp((event.clientX - rect.left) / rect.width, 0, 1);
-    const targetTime = historyBounds.start + ratio * historyBounds.span;
-    setFollowLive(false);
-    setViewOffsetMs(clamp(targetTime - historyBounds.start - windowMs / 2, 0, historyBounds.maxOffset));
   };
 
   return (
     <section className="rounded-md border border-border bg-background/40 p-3">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap gap-3 text-xs font-mono">
-          <span className="text-muted-foreground">{formatWindowLabel(xDomain, now)}</span>
+          <span className="text-muted-foreground">{formatWindowLabel(visibleSamples, followLive)}</span>
           <span className="text-voltage">{voltage.toFixed(2)} V</span>
           <span className="text-amp">{current.toFixed(3)} A</span>
         </div>
@@ -213,8 +179,8 @@ export function LiveChart({ voltage, current, running }: Props) {
           <button
             type="button"
             className="h-8 rounded-md border border-border bg-secondary px-3 text-xs font-mono text-foreground transition-colors hover:bg-accent disabled:opacity-50"
-            onClick={() => exportVisibleJson(chartData, xDomain)}
-            disabled={chartData.length === 0}
+            onClick={() => exportVisibleJson(visibleSamples)}
+            disabled={visibleSamples.length === 0}
           >
             Export Visible JSON
           </button>
@@ -242,9 +208,9 @@ export function LiveChart({ voltage, current, running }: Props) {
         </div>
       </div>
 
-      <div className="h-64 min-w-0">
+      <div className="h-80 min-w-0">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 10, right: 18, bottom: 16, left: 8 }}>
+          <LineChart data={chartSamples} margin={{ top: 10, right: 18, bottom: 16, left: 8 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.08)" />
             <XAxis
               dataKey="t"
@@ -320,37 +286,19 @@ export function LiveChart({ voltage, current, running }: Props) {
               animationDuration={220}
               animationEasing="ease-out"
             />
+            <Brush
+              dataKey="t"
+              height={36}
+              travellerWidth={10}
+              startIndex={brushWindow.startIndex}
+              endIndex={brushWindow.endIndex}
+              tickFormatter={(value) => new Date(Number(value)).toLocaleTimeString()}
+              stroke="var(--primary)"
+              fill="var(--secondary)"
+              onChange={handleBrushChange}
+            />
           </LineChart>
         </ResponsiveContainer>
-      </div>
-
-      <div className="mt-3">
-        <div
-          ref={timelineRef}
-          className="relative h-12 cursor-pointer rounded-md border border-border bg-secondary/50"
-          onPointerDown={jumpTimeline}
-        >
-          <div className="pointer-events-none absolute inset-x-2 top-2 h-1 rounded-full bg-border" />
-          <div className="pointer-events-none absolute bottom-1 left-2 right-2 flex justify-between text-[10px] font-mono text-muted-foreground">
-            <span>{new Date(historyBounds.start).toLocaleTimeString()}</span>
-            <span>{formatDuration(windowMs)}</span>
-            <span>{followLive ? "live" : new Date(xDomain[1]).toLocaleTimeString()}</span>
-          </div>
-          <div
-            className="absolute top-2 h-6 cursor-grab rounded-md border border-primary/60 bg-primary/20 shadow-[0_0_18px_-8px_var(--primary)] active:cursor-grabbing"
-            style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }}
-            onPointerDown={(event) => dragTimeline("move", event)}
-          >
-            <div
-              className="absolute -left-1 top-0 h-full w-3 cursor-ew-resize rounded-l-md border-l-2 border-primary bg-primary/35"
-              onPointerDown={(event) => dragTimeline("left", event)}
-            />
-            <div
-              className="absolute -right-1 top-0 h-full w-3 cursor-ew-resize rounded-r-md border-r-2 border-primary bg-primary/35"
-              onPointerDown={(event) => dragTimeline("right", event)}
-            />
-          </div>
-        </div>
       </div>
     </section>
   );
@@ -360,34 +308,26 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function formatRelativeTime(value: number, now: number) {
-  const seconds = Math.round((value - now) / 1000);
+function formatRelativeTime(value: number, end: number) {
+  const seconds = Math.round((value - end) / 1000);
   return seconds === 0 ? "now" : `${seconds}s`;
 }
 
-function formatWindowLabel(domain: [number, number], now: number) {
-  const secondsBehind = Math.max(0, Math.round((now - domain[1]) / 1000));
-  const start = new Date(domain[0]).toLocaleTimeString();
-  const end = new Date(domain[1]).toLocaleTimeString();
+function formatWindowLabel(samples: Sample[], live: boolean) {
+  if (samples.length === 0) return "No samples";
 
-  return secondsBehind <= 1 ? `${start} - live` : `${start} - ${end}`;
+  const start = new Date(samples[0].t).toLocaleTimeString();
+  const end = new Date(samples.at(-1)!.t).toLocaleTimeString();
+  return live ? `${start} - live` : `${start} - ${end}`;
 }
 
-function formatDuration(ms: number) {
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.round(minutes / 60)}h`;
-}
-
-function exportVisibleJson(samples: Sample[], domain: [number, number]) {
+function exportVisibleJson(samples: Sample[]) {
   const body = JSON.stringify(
     {
       visibleWindow: {
-        start: new Date(domain[0]).toISOString(),
-        end: new Date(domain[1]).toISOString(),
-        durationMs: domain[1] - domain[0],
+        start: samples[0] ? new Date(samples[0].t).toISOString() : null,
+        end: samples.at(-1) ? new Date(samples.at(-1)!.t).toISOString() : null,
+        durationMs: samples.length > 1 ? samples.at(-1)!.t - samples[0].t : 0,
       },
       samples: samples.map((sample) => ({
         timestamp: new Date(sample.t).toISOString(),
